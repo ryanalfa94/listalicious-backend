@@ -1,8 +1,19 @@
+# backend/app/main.py
+
 from fastapi import FastAPI
+from app.schemas.user import UserCreate
+from app.routes import auth
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Listalicious API",
+    version="1.0.0",
+    description="Backend for the Listalicious grocery list app."
+)
 
 @app.get("/")
-def read_root():
+async def read_root():
     return {"message": "Listalicious backend is alive!"}
+
+# Register all routers
+app.include_router(auth.router)
