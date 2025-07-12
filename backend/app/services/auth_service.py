@@ -10,6 +10,11 @@ from bson import ObjectId
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+from fastapi import HTTPException, status
+from datetime import datetime
+from bson import ObjectId
+
 async def register_user(user_data: UserCreate) -> UserResponse:
     # 1. Check if email already exists
     existing_user = await user_collection.find_one({"email": user_data.email})
@@ -22,22 +27,30 @@ async def register_user(user_data: UserCreate) -> UserResponse:
     # 2. Hash the password
     hashed_password = pwd_context.hash(user_data.password)
 
-    # 3. Create a User model instance
-    user = User(
-        email=user_data.email,
-        hashed_password=hashed_password,
-        username=user_data.username
-    )
+    # 3. Create a timestamp
+    now = datetime.utcnow()
 
-    # 4. Insert into MongoDB
-    result = await user_collection.insert_one(user.to_dict())
-    user_id = str(result.inserted_id)
+    # 4. Build the user dictionary for MongoDB
+    user_dict = {
+        "email": user_data.email,
+        "username": user_data.username,
+        "hashed_password": hashed_password,
+        "created_at": now,
+        "updated_at": now
+    }
 
-    # 5. Return response (exclude password)
-    return UserResponse(
-        id=user_id,
-        email=user.email,
-        username=user.username,
-        created_at=user.created_at,
-        updated_at=user.updated_at
-    )
+    # 5. Insert into MongoDB
+    try:
+        result = await user_collection.insert_one(user_dict)
+    except Exception as e:
+        print("MongoDB insert failed:", e)
+        raise HTTPException(status_code=500, detail="Database error")
+
+    user_dict["_id"] = str(result.inserted_id)
+
+    # 6. Build response safely
+    try:
+        return UserResponse(**user_dict)
+    except Exception as e:
+        print("Failed to build UserResponse:", e)
+        raise HTTPException(status_code=500, detail="Invalid user response")

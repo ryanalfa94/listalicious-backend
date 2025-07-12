@@ -84,6 +84,37 @@ You can deploy this backend for free using:
 Just make sure to set your environment variables (`MONGO_URI`, `DB_NAME`) in the platform settings.
 
 ---
+## Docker and Mango
+
+🐳 Running MongoDB with Docker (Optional Local Setup)
+If you're working locally and prefer not to install MongoDB manually, you can spin it up with Docker:
+
+1. Make sure Docker is installed
+Install Docker Desktop and ensure it's running.
+
+2. Start a MongoDB container
+docker run -d \
+  --name listalicious-mongo \
+  -p 27017:27017 \
+  -v listalicious_data:/data/db \
+  mongo
+
+This command:
+Runs MongoDB in the background
+Makes it available on localhost:27017
+Persists data with a named volume (listalicious_data)
+
+3. Update your .env for local use
+MONGO_URI=mongodb://localhost:27017/listalicious
+DB_NAME=listalicious
+
+4. Verify the container is running
+docker ps
+
+if container is not running, you can run it manually by clicking on the start button inside the docker application. 
+
+You should see a container named listalicious-mongo. You're ready to run the backend!
+---
 
 ## 🤝 Collaborators
 
