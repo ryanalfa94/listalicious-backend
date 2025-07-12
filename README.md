@@ -121,9 +121,12 @@ You should see a container named listalicious-mongo. You're ready to run the bac
 To add or manage collaborators, go to the GitHub repo → Settings → Collaborators.
 
 ---
+## Testing 
+Optionally use Swagger docs
+If you want to test things easily:
 
-## 📅 Last Updated
-May 19, 2025
+Visit: http://localhost:8000/docs
+
 
 ---
 
