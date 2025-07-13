@@ -5,6 +5,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient  # MongoDB async client
 import os
 from dotenv import load_dotenv  # For reading .env files
+from bson.objectid import ObjectId
 
 # Load environment variables from a .env file in your root directory
 load_dotenv()
@@ -23,3 +24,7 @@ db = client[MONGO_DB_NAME]
 user_collection = db["users"]
 list_collection = db["lists"]
 item_collection = db["items"]
+
+
+async def get_user_by_email(email: str):
+    return await user_collection.find_one({"email": email})
