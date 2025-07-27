@@ -5,7 +5,6 @@
 from motor.motor_asyncio import AsyncIOMotorClient  # MongoDB async client
 import os
 from dotenv import load_dotenv  # For reading .env files
-from bson.objectid import ObjectId
 
 # Load environment variables from a .env file in your root directory
 load_dotenv()
