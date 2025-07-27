@@ -2,22 +2,14 @@
 # Business logic for user registration
 
 from fastapi import HTTPException, status, Depends
-from app.schemas.user import UserCreate, UserResponse
-from app.models.user import User
-from app.database.database import user_collection
-from passlib.context import CryptContext
-from bson import ObjectId
-from passlib.context import CryptContext
-from app.database.database import get_user_by_email
-from app.services.jwt_service import create_access_token, verify_token
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from app.schemas.user import UserCreate, UserResponse
+from app.services.jwt_service import create_access_token, verify_token
+from app.database.database import user_collection, get_user_by_email
+from passlib.context import CryptContext
+from datetime import datetime
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-from fastapi import HTTPException, status
-from datetime import datetime
-from bson import ObjectId
 
 async def register_user(user_data: UserCreate) -> UserResponse:
     # 1. Check if email already exists
@@ -58,13 +50,8 @@ async def register_user(user_data: UserCreate) -> UserResponse:
     except Exception as e:
         print("Failed to build UserResponse:", e)
         raise HTTPException(status_code=500, detail="Invalid user response")
-    
-    
-    
-    
-### LOGIN
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+### LOGIN
 
 async def authenticate_user(email: str, password: str):
     user = await get_user_by_email(email)
@@ -78,8 +65,6 @@ async def login_user(email: str, password: str):
         return None
     token = create_access_token(data={"sub": user["email"]})
     return token
-
-
 
 bearer_scheme = HTTPBearer()
 
