@@ -21,25 +21,10 @@
 - **Deployment:** Ready for Render.com or Railway
 - **Auth (Optional):** Firebase Auth or custom token-based system
 
----
-
-## 📁 Project Structure
-
-```
-listalicious-backend/
-├── backend/
-│   ├── main.py               # Entry point for FastAPI app
-│   ├── routes/               # API route files (e.g., groceries.py, users.py)
-│   ├── models/               # Pydantic models
-│   └── database.py           # MongoDB connection setup
-├── requirements.txt          # Python dependencies
-├── .gitignore
-└── README.md
-```
-
----
 
 ## ⚙️ Getting Started
+
+Open a terminal window (preferably a wsl)
 
 ### 1. Clone the repo
 ```bash
@@ -53,20 +38,24 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
 
+it's recommended you install as the developers are mostly focused on development with it
+
 ### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 4. Create `.env` file
-```env
+```
 MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/listalicious?retryWrites=true&w=majority
 DB_NAME=listalicious
+JWT_SECRET_KEY=<Your_Super_Secret_Key>
 ```
+To get a key, you can use a 32 bit key generator. You'll find plenty searching on Google
 
 ### 5. Run the server
 ```bash
-uvicorn backend.main:app --reload
+./run.sh
 ```
 
 Go to `http://127.0.0.1:8000/docs` to explore the Swagger API docs.
@@ -84,15 +73,45 @@ You can deploy this backend for free using:
 Just make sure to set your environment variables (`MONGO_URI`, `DB_NAME`) in the platform settings.
 
 ---
+## Docker and Mango
 
-## 🤝 Collaborators
+🐳 Running MongoDB with Docker (Optional Local Setup)
+If you're working locally and prefer not to install MongoDB manually, you can spin it up with Docker:
 
-To add or manage collaborators, go to the GitHub repo → Settings → Collaborators.
+1. Make sure Docker is installed
+Install Docker Desktop and ensure it's running.
 
----
+2. Start a MongoDB container
+    ```
+    docker run -d \
+      --name listalicious-mongo \
+      -p 27017:27017 \
+      -v listalicious_data:/data/db \
+      mongo
+    ```
 
-## 📅 Last Updated
-May 19, 2025
+This command:
+Runs MongoDB in the background
+Makes it available on localhost:27017
+Persists data with a named volume (listalicious_data)
+
+3. Update your .env for local use
+MONGO_URI=mongodb://localhost:27017/listalicious
+DB_NAME=listalicious
+
+4. Verify the container is running
+docker ps
+
+if container is not running, you can run it manually by clicking on the start button inside the docker application. 
+
+You should see a container named listalicious-mongo. You're ready to run the backend!
+
+## Testing 
+Optionally use Swagger docs
+If you want to test things easily:
+
+Visit: http://localhost:8000/docs
+
 
 ---
 
