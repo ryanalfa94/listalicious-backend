@@ -47,3 +47,46 @@ Response (200 OK)
   "created_at": "2024-07-12T12:34:56.789Z",
   "updated_at": "2024-07-12T12:34:56.789Z"
 }
+
+
+### POST lists
+
+Authorization: Bearer <access_token>
+
+JSON Body:
+{
+  "title": "Test List"
+}
+
+Response (201 OK)
+{
+    "_id": "68a2686b4a39319087b95936",
+    "title": "Test List",
+    "owner_id": "6872aa4e80f5c2f731f9a62b",
+    "items": [],
+    "shared_with": [],
+    "created_at": "2025-08-17T23:40:27.497486",
+    "updated_at": "2025-08-17T23:40:27.497486"
+}
+
+### POST items/<list_id>
+
+Authorization: Bearer <access_token>
+
+JSON Body:
+{
+  "name": "Bananas",
+  "quantity": 6,
+  "unit": "pcs"
+}
+
+Response (200 OK)
+{
+    "_id": "68a268d04a39319087b95937",
+    "name": "Bananas",
+    "quantity": 6,
+    "unit": "pcs",
+    "list_id": "68a2686b4a39319087b95936",
+    "created_at": "2025-08-17T23:42:08.420764",
+    "updated_at": "2025-08-17T23:42:08.420766"
+}

@@ -24,7 +24,12 @@ db = client[MONGO_DB_NAME]
 user_collection = db["users"]
 list_collection = db["lists"]
 item_collection = db["items"]
+grocery_lists_collection = db["grocery_lists"]
+items_collection = db["items"]
 
 
 async def get_user_by_email(email: str):
     return await user_collection.find_one({"email": email})
+
+def get_database():
+    return db
