@@ -3,7 +3,7 @@
 ### POST /auth/register
 - Registers a new user.
 - Request Body:
-```json
+json
 {
   "email": "user@example.com",
   "password": "secure123",
@@ -34,7 +34,6 @@ Response (200 OK):
 }
 
 
-
 ### GET /auth/me
 
 Authorization: Bearer <access_token>
@@ -48,6 +47,7 @@ Response (200 OK)
   "updated_at": "2024-07-12T12:34:56.789Z"
 }
 
+## Lists API 
 
 ### POST lists
 
@@ -90,3 +90,93 @@ Response (200 OK)
     "created_at": "2025-08-17T23:42:08.420764",
     "updated_at": "2025-08-17T23:42:08.420766"
 }
+
+
+### GET /lists
+
+Returns all grocery lists owned by the authenticated user.
+Authorization: Bearer <access_token>
+
+Response (200 OK):
+[
+  {
+    "_id": "68a260e6d44a93c87b3d2492",
+    "title": "Weekly Costco Run",
+    "owner_id": "6872aa4e80f5c2f731f9a62b",
+    "items": [],
+    "shared_with": [],
+    "created_at": "2025-08-17T23:08:22.756000",
+    "updated_at": "2025-08-17T23:08:22.756000"
+  }
+]
+
+
+### GET /lists/{list_id}
+
+Returns a single list.
+
+Guarded by ownership (ensure_list_owned).
+
+Authorization: Bearer <access_token>
+
+Path Params
+
+list_id (string)
+
+Response (200 OK):
+{
+  "_id": "68a260e6d44a93c87b3d2492",
+  "title": "Weekly Costco Run",
+  "owner_id": "6872aa4e80f5c2f731f9a62b",
+  "items": [],
+  "shared_with": [],
+  "created_at": "2025-08-17T23:08:22.756000",
+  "updated_at": "2025-08-17T23:08:22.756000"
+}
+
+### PUT /lists/{list_id}
+
+Partial update supported. Only fields you include are updated (payload.model_dump(exclude_unset=True)).
+
+Typical updatable fields: title, items, shared_with.
+
+Authorization: Bearer <access_token>
+
+Path Params
+
+list_id (string)
+
+Request Body (JSON) - Update 1 or more fields at a time:
+{
+  "title": "Costco + Target",
+}
+
+Response (200 OK):
+{
+  "_id": "68a260e6d44a93c87b3d2492",
+  "title": "Costco + Target",
+  "owner_id": "6872aa4e80f5c2f731f9a62b",
+  "items": ["paper towels", "dish soap"],
+  "shared_with": [],
+  "created_at": "2025-08-17T23:08:22.756000",
+  "updated_at": "2025-08-18T23:23:43.093000"
+}
+
+
+### DELETE /lists/{list_id}
+
+Deletes a list you own.
+
+Authorization: Bearer <access_token>
+
+Path Params
+
+list_id (string)
+
+Response (204 No Content):
+
+(no body)
+
+
+
+## Item APIs
