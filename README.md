@@ -29,7 +29,6 @@
 listalicious-backend/
 ├── backend/
 │   ├── main.py               # Entry point for FastAPI app
-│   ├── schemas/              # Pydantic schemas for request & response validation (API input/output).
 │   ├── routes/               # API route files (e.g., groceries.py, users.py)
 │   ├── models/               # Pydantic models
 │   └── database.py           # MongoDB connection setup
@@ -73,45 +72,36 @@ uvicorn backend.main:app --reload
 Go to `http://127.0.0.1:8000/docs` to explore the Swagger API docs.
 
 ---
-## Docker and Mango
 
-🐳 Running MongoDB with Docker (Optional Local Setup)
-If you're working locally and prefer not to install MongoDB manually, you can spin it up with Docker:
+## ☁️ Deployment
 
-1. Make sure Docker is installed
-Install Docker Desktop and ensure it's running.
+You can deploy this backend for free using:
 
-2. Start a MongoDB container
-docker run -d \
-  --name listalicious-mongo \
-  -p 27017:27017 \
-  -v listalicious_data:/data/db \
-  mongo
+- [Render.com](https://render.com)
+- [Railway.app](https://railway.app)
+- [Deta.sh](https://deta.space)
 
-This command:
-Runs MongoDB in the background
-Makes it available on localhost:27017
-Persists data with a named volume (listalicious_data)
-
-3. Update your .env for local use
-MONGO_URI=mongodb://localhost:27017/listalicious
-DB_NAME=listalicious
-
-4. Verify the container is running
-docker ps
-
-if container is not running, you can run it manually by clicking on the start button inside the docker application. 
-
-You should see a container named listalicious-mongo. You're ready to run the backend!
+Just make sure to set your environment variables (`MONGO_URI`, `DB_NAME`) in the platform settings.
 
 ---
-## Testing 
-Optionally use Swagger docs
-If you want to test things easily:
 
-Visit: http://localhost:8000/docs
+## 🤝 Collaborators
 
-or Postman
+To add or manage collaborators, go to the GitHub repo → Settings → Collaborators.
+
+---
+
+## 📅 Last Updated
+May 19, 2025
+
+---
+
+## 🔮 Future Enhancements
+
+- ✅ User authentication (via Firebase or OAuth)
+- 🤖 AI-based smart grocery suggestions
+- 🔔 Notification system
+- 📤 Export lists or sync to cloud drives
 
 ---
 
