@@ -179,4 +179,124 @@ Response (204 No Content):
 
 
 
+### Share List (Add Contributor)
+
+POST /lists/{list_id}/share
+
+Request (JSON)
+
+{ "email": "contributor@example.com" }
+
+
+200 OK
+
+{
+  "list_id": "68a260e6d44a93c87b3d2492",
+  "shared_with": ["6872aa4e80f5c2f731f9a62b"]
+}
+
+
+### Unshare List (Remove Contributor)
+
+POST /lists/{list_id}/unshare
+
+Request (JSON)
+
+{ "email": "contributor@example.com" }
+
+
+200 OK
+
+{
+  "list_id": "68a260e6d44a93c87b3d2492",
+  "shared_with": []
+}
+
 ## Item APIs
+
+### List Items
+
+GET /lists/{list_id}/items
+
+200 OK
+
+[
+  {
+    "_id": "66f0c9f1a2...",
+    "name": "Bananas",
+    "quantity": 6,
+    "unit": "pcs",
+    "note": "ripe pls",
+    "is_checked": false,
+    "list_id": "68a260e6d44a93c87b3d2492",
+    "created_at": "2025-08-18T00:00:00Z",
+    "updated_at": "2025-08-18T00:00:00Z"
+  }
+]
+
+### Create Item
+
+POST /lists/{list_id}/items
+
+Request (JSON)
+
+{
+  "name": "Paper Towels",
+  "quantity": 2,
+  "unit": "pack",
+  "note": "Kirkland if possible",
+  "is_checked": false
+}
+
+
+201 Created
+
+{
+  "_id": "66f0cab3d1...",
+  "name": "Paper Towels",
+  "quantity": 2,
+  "unit": "pack",
+  "note": "Kirkland if possible",
+  "is_checked": false,
+  "list_id": "68a260e6d44a93c87b3d2492",
+  "created_at": "2025-08-18T00:05:00Z",
+  "updated_at": "2025-08-18T00:05:00Z"
+}
+
+
+
+### Update Item
+
+PUT /lists/{list_id}/items/{item_id}
+
+Request (JSON) — any subset of fields
+
+{
+  "name": "Paper Towels",
+  "quantity": 3,
+  "is_checked": true,
+  "note": "any brand ok"
+}
+
+
+200 OK
+
+{
+  "_id": "66f0cab3d1...",
+  "name": "Paper Towels",
+  "quantity": 3,
+  "unit": "pack",
+  "note": "any brand ok",
+  "is_checked": true,
+  "list_id": "68a260e6d44a93c87b3d2492",
+  "created_at": "2025-08-18T00:05:00Z",
+  "updated_at": "2025-08-18T00:10:30Z"
+}
+
+
+
+### Delete Item
+
+DELETE /lists/{list_id}/items/{item_id}
+
+204 No Content
