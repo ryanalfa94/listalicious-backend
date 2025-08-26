@@ -3,14 +3,14 @@
 # It includes fields for title, ownership, shared users, and list items, and supports MongoDB insertion via a dictionary method.
 
 from datetime import datetime, timezone
-from bson import objectID
+from bson import ObjectId
 from typing import List, Optional
 
 class GroceryList:
     def __init__(
         self,
         title: str,
-        owner_id: objectID,
+        owner_id: ObjectId,
         items: Optional[List[dict]] =  None,
         shared_with: Optional[List[dict]] = None
         ):
@@ -37,8 +37,8 @@ def to_dict(self):
     return {
         "title": self.title,
         "owner_id": self.owner_id,
-        "items": self.items,
-        "shared_with": self.shared_with,
+        "items": self.items or [],
+        "shared_with": self.shared_with or [],
         "created_at": self.created_at,
         "updated_at": self.updated_at
     }
