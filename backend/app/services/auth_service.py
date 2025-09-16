@@ -9,78 +9,123 @@ from app.database.database import user_collection, get_user_by_email
 from passlib.context import CryptContext
 from datetime import datetime
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-async def register_user(user_data: UserCreate) -> UserResponse:
-    # 1. Check if email already exists
+from datetime import datetime, timezone
+from typing import Optional
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+bearer_scheme = HTTPBearer()
+
+# ---------- Register (auto-login) ----------
+async def register_user(user_data) -> dict:
+    # 1) unique email
+
     existing_user = await user_collection.find_one({"email": user_data.email})
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    # 2. Hash the password
+    # 2) hash password
     hashed_password = pwd_context.hash(user_data.password)
-
-    # 3. Create a timestamp
     now = datetime.utcnow()
 
-    # 4. Build the user dictionary for MongoDB
-    user_dict = {
+    # 3) insert with token_version
+    user_doc = {
         "email": user_data.email,
         "username": user_data.username,
         "hashed_password": hashed_password,
         "created_at": now,
-        "updated_at": now
+        "updated_at": now,
+        "token_version": 0,  # <-- new
     }
 
-    # 5. Insert into MongoDB
-    try:
-        result = await user_collection.insert_one(user_dict)
-    except Exception as e:
-        print("MongoDB insert failed:", e)
-        raise HTTPException(status_code=500, detail="Database error")
+    res = await user_collection.insert_one(user_doc)
+    user_id = str(res.inserted_id)
 
-    user_dict["_id"] = str(result.inserted_id)
+    # 4) create access token (sub=user_id, tv=0)
+    token = create_access_token(
+        subject=user_id,
+        token_version=0,
+        extra={"email": user_data.email}
+    )
 
-    # 6. Build response safely
-    try:
-        return UserResponse(**user_dict)
-    except Exception as e:
-        print("Failed to build UserResponse:", e)
-        raise HTTPException(status_code=500, detail="Invalid user response")
+    # 5) build response
+    user_out = {
+        "_id": user_id,
+        "email": user_data.email,
+        "username": user_data.username,
+        "created_at": now,
+        "updated_at": now,
+    }
+    return {"user": user_out, "access_token": token, "token_type": "bearer"}
 
-### LOGIN
 
+# ---------- Login (same response shape) ----------
 async def authenticate_user(email: str, password: str):
     user = await get_user_by_email(email)
     if user and pwd_context.verify(password, user["hashed_password"]):
         return user
     return None
 
-async def login_user(email: str, password: str):
-    user = await  authenticate_user(email, password)
+async def login_user(email: str, password: str) -> Optional[dict]:
+    user = await authenticate_user(email, password)
     if not user:
         return None
-    token = create_access_token(data={"sub": user["email"]})
-    return token
 
-bearer_scheme = HTTPBearer()
+    token = create_access_token(
+        subject=str(user["_id"]),
+        token_version=int(user.get("token_version", 0)),
+        extra={"email": user["email"]}
+    )
+
+    user_out = {
+        "_id": str(user["_id"]),
+        "email": user["email"],
+        "username": user.get("username"),
+        "created_at": user.get("created_at"),
+        "updated_at": user.get("updated_at"),
+    }
+    return {"user": user_out, "access_token": token, "token_type": "bearer"}
+
+# ---------- Current user with token_version enforcement ----------
 
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     payload = verify_token(token.credentials)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    
-    email = payload.get("sub")
-    user = await get_user_by_email(email)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user_id = payload.get("sub")
+    token_tv = int(payload.get("tv", 0))
+    jti = payload.get("jti")  # <--- read jti
+    exp_ts = payload.get("exp")
+
+    if not user_id or not jti or not exp_ts:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # 1) check revocation (single-device logout)
+    # If present, this token is logged out even if still valid.
+    revoked = await user_collection.database["revoked_tokens"].find_one({"jti": jti})
+    if revoked:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
+
+    # 2) load user & compare token_version
+    try:
+        user = await user_collection.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        user = None
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    if int(user.get("token_version", 0)) != token_tv:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token no longer valid")
+
     return user
+
+
+
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def get_password_hash(plain: str) -> str:
+    return pwd_context.hash(plain)

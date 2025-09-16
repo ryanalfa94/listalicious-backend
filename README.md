@@ -22,6 +22,24 @@
 - **Auth (Optional):** Firebase Auth or custom token-based system
 
 
+## 📁 Project Structure
+
+```
+listalicious-backend/
+├── backend/
+│   ├── main.py               # Entry point for FastAPI app
+│   ├── schemas/              # Pydantic schemas for request & response validation (API input/output).
+│   ├── routes/               # API route files (e.g., groceries.py, users.py)
+│   ├── models/               # Pydantic models
+│   └── database.py           # MongoDB connection setup
+├── requirements.txt          # Python dependencies
+├── .gitignore
+└── README.md
+```
+
+
+
+
 ## ⚙️ Getting Started
 
 Open a terminal window (preferably a wsl)
@@ -61,18 +79,6 @@ To get a key, you can use a 32 bit key generator. You'll find plenty searching o
 Go to `http://127.0.0.1:8000/docs` to explore the Swagger API docs.
 
 ---
-
-## ☁️ Deployment
-
-You can deploy this backend for free using:
-
-- [Render.com](https://render.com)
-- [Railway.app](https://railway.app)
-- [Deta.sh](https://deta.space)
-
-Just make sure to set your environment variables (`MONGO_URI`, `DB_NAME`) in the platform settings.
-
----
 ## Docker and Mango
 
 🐳 Running MongoDB with Docker (Optional Local Setup)
@@ -106,21 +112,15 @@ if container is not running, you can run it manually by clicking on the start bu
 
 You should see a container named listalicious-mongo. You're ready to run the backend!
 
+ user-profile-features
+
 ## Testing 
 Optionally use Swagger docs
 If you want to test things easily:
 
 Visit: http://localhost:8000/docs
 
-
----
-
-## 🔮 Future Enhancements
-
-- ✅ User authentication (via Firebase or OAuth)
-- 🤖 AI-based smart grocery suggestions
-- 🔔 Notification system
-- 📤 Export lists or sync to cloud drives
+or Postman
 
 ---
 
