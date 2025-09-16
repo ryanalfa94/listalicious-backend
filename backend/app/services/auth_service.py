@@ -2,15 +2,12 @@
 # Business logic for user registration
 
 from fastapi import HTTPException, status, Depends
-from app.schemas.user import UserCreate, UserResponse
-from app.models.user import User
-from app.database.database import user_collection
-from passlib.context import CryptContext
-from bson import ObjectId
-from passlib.context import CryptContext
-from app.database.database import get_user_by_email
-from app.services.jwt_service import create_access_token, verify_token
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from app.schemas.user import UserCreate, UserResponse
+from app.services.jwt_service import create_access_token, verify_token
+from app.database.database import user_collection, get_user_by_email
+from passlib.context import CryptContext
+from datetime import datetime
 
 
 from datetime import datetime, timezone
@@ -22,6 +19,7 @@ bearer_scheme = HTTPBearer()
 # ---------- Register (auto-login) ----------
 async def register_user(user_data) -> dict:
     # 1) unique email
+
     existing_user = await user_collection.find_one({"email": user_data.email})
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -60,6 +58,7 @@ async def register_user(user_data) -> dict:
     }
     return {"user": user_out, "access_token": token, "token_type": "bearer"}
 
+
 # ---------- Login (same response shape) ----------
 async def authenticate_user(email: str, password: str):
     user = await get_user_by_email(email)
@@ -88,6 +87,7 @@ async def login_user(email: str, password: str) -> Optional[dict]:
     return {"user": user_out, "access_token": token, "token_type": "bearer"}
 
 # ---------- Current user with token_version enforcement ----------
+
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     payload = verify_token(token.credentials)
     if not payload:

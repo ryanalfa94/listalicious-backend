@@ -21,7 +21,6 @@
 - **Deployment:** Ready for Render.com or Railway
 - **Auth (Optional):** Firebase Auth or custom token-based system
 
----
 
 ## 📁 Project Structure
 
@@ -38,9 +37,12 @@ listalicious-backend/
 └── README.md
 ```
 
----
+
+
 
 ## ⚙️ Getting Started
+
+Open a terminal window (preferably a wsl)
 
 ### 1. Clone the repo
 ```bash
@@ -54,20 +56,24 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
 
+it's recommended you install as the developers are mostly focused on development with it
+
 ### 3. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 4. Create `.env` file
-```env
+```
 MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/listalicious?retryWrites=true&w=majority
 DB_NAME=listalicious
+JWT_SECRET_KEY=<Your_Super_Secret_Key>
 ```
+To get a key, you can use a 32 bit key generator. You'll find plenty searching on Google
 
 ### 5. Run the server
 ```bash
-uvicorn backend.main:app --reload
+./run.sh
 ```
 
 Go to `http://127.0.0.1:8000/docs` to explore the Swagger API docs.
@@ -82,11 +88,13 @@ If you're working locally and prefer not to install MongoDB manually, you can sp
 Install Docker Desktop and ensure it's running.
 
 2. Start a MongoDB container
-docker run -d \
-  --name listalicious-mongo \
-  -p 27017:27017 \
-  -v listalicious_data:/data/db \
-  mongo
+    ```
+    docker run -d \
+      --name listalicious-mongo \
+      -p 27017:27017 \
+      -v listalicious_data:/data/db \
+      mongo
+    ```
 
 This command:
 Runs MongoDB in the background
@@ -104,7 +112,8 @@ if container is not running, you can run it manually by clicking on the start bu
 
 You should see a container named listalicious-mongo. You're ready to run the backend!
 
----
+ user-profile-features
+
 ## Testing 
 Optionally use Swagger docs
 If you want to test things easily:
