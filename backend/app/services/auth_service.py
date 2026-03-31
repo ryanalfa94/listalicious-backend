@@ -13,11 +13,18 @@ from app.services.jwt_service import create_access_token, verify_token
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+MAX_FAILED_LOGINS = 10      # attempts before lockout
+LOCKOUT_MINUTES   = 15      # how long the lockout lasts
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer()
+
+# Pre-computed at startup — used to keep login timing consistent whether or
+# not the email exists (prevents user-enumeration via timing).
+_DUMMY_HASH = pwd_context.hash("__dummy__")
 
 # ---------- Register (auto-login) ----------
 async def register_user(user_data) -> dict:
@@ -37,7 +44,8 @@ async def register_user(user_data) -> dict:
         "hashed_password": hashed_password,
         "created_at": now,
         "updated_at": now,
-        "token_version": 0,  # <-- new
+        "token_version": 0,
+        "email_verified": False,
     }
 
     res = await user_collection.insert_one(user_doc)
@@ -57,20 +65,43 @@ async def register_user(user_data) -> dict:
         "username": user_data.username,
         "created_at": now,
         "updated_at": now,
+        "email_verified": False,
     }
     return {"user": user_out, "access_token": token, "token_type": "bearer"}
 
 # ---------- Login (same response shape) ----------
-async def authenticate_user(email: str, password: str):
-    user = await get_user_by_email(email)
-    if user and pwd_context.verify(password, user["hashed_password"]):
-        return user
-    return None
-
 async def login_user(email: str, password: str) -> Optional[dict]:
-    user = await authenticate_user(email, password)
+    user = await get_user_by_email(email)
     if not user:
+        # Constant-time path: run a real bcrypt verify (always False) so that
+        # login timing is the same whether the email exists or not.
+        pwd_context.verify(password, _DUMMY_HASH)
         return None
+
+    now = datetime.utcnow()
+
+    # Check lockout
+    locked_until = user.get("locked_until")
+    if locked_until and locked_until > now:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+        )
+
+    # Verify password
+    if not pwd_context.verify(password, user["hashed_password"]):
+        new_count = user.get("failed_login_count", 0) + 1
+        update: dict = {"failed_login_count": new_count}
+        if new_count >= MAX_FAILED_LOGINS:
+            update["locked_until"] = now + timedelta(minutes=LOCKOUT_MINUTES)
+        await user_collection.update_one({"_id": user["_id"]}, {"$set": update})
+        return None
+
+    # Success — reset lockout state
+    await user_collection.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"failed_login_count": 0, "locked_until": None}},
+    )
 
     token = create_access_token(
         subject=str(user["_id"]),
@@ -84,6 +115,7 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         "username": user.get("username"),
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
+        "email_verified": user.get("email_verified", False),
     }
     return {"user": user_out, "access_token": token, "token_type": "bearer"}
 

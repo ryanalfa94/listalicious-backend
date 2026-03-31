@@ -19,13 +19,20 @@ async def create_grocery_list(title: str, owner_id: str) -> dict:
     }
 
     result = await db["grocery_lists"].insert_one(doc)
-    doc["_id"] = str(result.inserted_id)  # convert ObjectId to string
+    doc["_id"] = str(result.inserted_id)
 
     return doc
 
-async def get_my_lists(db, user_id: str):
-    cursor = db["grocery_lists"].find({"owner_id": str(user_id)}).sort("created_at", -1)
-    docs = await cursor.to_list(length=200)
+async def get_my_lists(db, user_id: str, skip: int = 0, limit: int = 50):
+    """Return all lists the user owns OR has been shared with, newest first."""
+    cursor = (
+        db["grocery_lists"]
+        .find({"$or": [{"owner_id": user_id}, {"shared_with": user_id}]})
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    docs = await cursor.to_list(length=limit)
     for d in docs:
         d["_id"] = str(d["_id"])
     return docs

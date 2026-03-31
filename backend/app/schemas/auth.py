@@ -3,10 +3,11 @@ from typing import Optional
 from datetime import datetime
 
 class AuthUser(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
     id: str = Field(..., alias="_id")
     email: EmailStr
     username: Optional[str] = None
+    email_verified: bool = False
     created_at: datetime
     updated_at: datetime
 

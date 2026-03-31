@@ -33,3 +33,29 @@ async def get_user_by_email(email: str):
 
 def get_database():
     return db
+
+async def init_indexes():
+    """Create indexes for performance and TTL auto-cleanup. Safe to call on every startup (idempotent)."""
+    # email_verifications: fast token lookup, per-user queries, and auto-delete expired docs
+    await db["email_verifications"].create_index("token_hash", unique=True)
+    await db["email_verifications"].create_index("user_id")
+    await db["email_verifications"].create_index("expires_at", expireAfterSeconds=0)
+
+    # password_resets: same pattern
+    await db["password_resets"].create_index("token_hash", unique=True)
+    await db["password_resets"].create_index("user_id")
+    await db["password_resets"].create_index("expires_at", expireAfterSeconds=0)
+
+    # revoked_tokens: fast JTI lookup and auto-delete once token expires
+    await db["revoked_tokens"].create_index("jti", unique=True)
+    await db["revoked_tokens"].create_index("expires_at", expireAfterSeconds=0)
+
+    # users: fast email lookup (used on every login and forgot-password)
+    await db["users"].create_index("email", unique=True)
+
+    # grocery_lists: fast lookup by owner and by shared_with membership
+    await db["grocery_lists"].create_index("owner_id")
+    await db["grocery_lists"].create_index("shared_with")
+
+    # items: fast lookup by list_id (used in every item query)
+    await db["items"].create_index("list_id")

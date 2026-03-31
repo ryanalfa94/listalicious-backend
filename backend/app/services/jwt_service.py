@@ -32,6 +32,11 @@ def create_access_token(*, subject: str, token_version: int, extra: dict | None 
 
 def verify_token(token: str):
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Reject tokens that are not access tokens (e.g. a future refresh token
+        # should never be accepted where an access token is expected).
+        if payload.get("type") != "access":
+            return None
+        return payload
     except JWTError:
         return None
