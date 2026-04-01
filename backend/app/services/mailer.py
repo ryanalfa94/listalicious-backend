@@ -68,6 +68,27 @@ def send_email_verification(to_email: str, token: str) -> None:
         log.info("[dev] email verification link for %s: %s", to_email, link)
     _send_sendgrid_email(to_email, subject, html)
 
+def send_email_change_verification(to_email: str, token: str) -> None:
+    """
+    Sends a verification email to the *new* address. Clicking the link confirms
+    the change and replaces the user's email.
+    """
+    link = f"{APP_URL.rstrip('/')}/confirm-email-change?token={token}"
+    subject = "Confirm your new email address"
+    html = f"""
+        <div style="font-family:system-ui,Segoe UI,Arial,sans-serif">
+          <h2>Confirm your new email address</h2>
+          <p>Click the button below to confirm this as your new email address.</p>
+          <p><a href="{link}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#8b5cf6;color:#fff;text-decoration:none;">Confirm Email Change</a></p>
+          <p>Or open this link: <br><a href="{link}">{link}</a></p>
+          <p>If you didn't request this, you can safely ignore this email.</p>
+        </div>
+    """
+    if ENV == "dev":
+        log.info("[dev] email change confirmation link for %s: %s", to_email, link)
+    _send_sendgrid_email(to_email, subject, html)
+
+
 def send_password_reset(to_email: str, token: str) -> None:
     """
     Sends a password reset email with a link containing a one-time token.

@@ -1,6 +1,6 @@
 # schemas/user.py
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 import re
@@ -34,6 +34,36 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: Optional[str] = Field(None, max_length=50)
+
+
+# Input schema for changing password while authenticated (POST /auth/change-password)
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+    confirm_new_password: Optional[str] = None
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit.")
+        return v
+
+    @model_validator(mode="after")
+    def confirm_match(self) -> "ChangePasswordRequest":
+        if self.confirm_new_password is not None and self.new_password != self.confirm_new_password:
+            raise ValueError("Passwords do not match.")
+        return self
+
+
+# Input schema for changing email address while authenticated (POST /auth/change-email)
+class ChangeEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    new_email: EmailStr
+    password: str  # current password required to confirm identity
 
 
 # Output schema for sending user data back (e.g., after login or register)

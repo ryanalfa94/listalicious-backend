@@ -59,3 +59,22 @@ async def init_indexes():
 
     # items: fast lookup by list_id (used in every item query)
     await db["items"].create_index("list_id")
+
+    # activity_logs: fast per-list query, auto-delete after 90 days
+    await db["activity_logs"].create_index("list_id")
+    await db["activity_logs"].create_index("created_at", expireAfterSeconds=90 * 24 * 3600)
+
+    # list_invites: fast token lookup and auto-delete expired invites
+    await db["list_invites"].create_index("token_hash", unique=True)
+    await db["list_invites"].create_index("list_id")
+    await db["list_invites"].create_index("expires_at", expireAfterSeconds=0)
+
+    # email_changes: fast token lookup and auto-delete expired requests
+    await db["email_changes"].create_index("token_hash", unique=True)
+    await db["email_changes"].create_index("user_id")
+    await db["email_changes"].create_index("expires_at", expireAfterSeconds=0)
+
+    # sessions: track issued access tokens for session listing/revocation
+    await db["sessions"].create_index("jti", unique=True)
+    await db["sessions"].create_index("user_id")
+    await db["sessions"].create_index("expires_at", expireAfterSeconds=0)

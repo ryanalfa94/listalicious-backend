@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, status, HTTPException
+from fastapi import APIRouter, Depends, BackgroundTasks, Request, status, HTTPException
 from datetime import datetime, timedelta
 from hashlib import sha256
 import secrets
@@ -7,10 +7,12 @@ from bson import ObjectId
 from app.database.database import get_database
 from app.services.auth_service import get_current_user, get_password_hash
 from app.services.mailer import send_email_verification, send_password_reset
+from app.core.limiter import limiter
 from app.schemas.verification import (
     EmailVerificationToken,
     ForgotPasswordRequest,
     ResetPasswordRequest,
+    ConfirmEmailChangeRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -18,24 +20,21 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # token lifetimes
 VERIFY_TTL_MIN = 60 * 24   # 24h
 RESET_TTL_MIN  = 30        # 30 minutes
-RESEND_COOLDOWN_SEC = 60   # minimum seconds between resend requests
+RESEND_COOLDOWN_SEC = 60
+
 
 # -------------------------
 # Email verification
 # -------------------------
 
 @router.post("/request-email-verification", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
 async def request_email_verification(
+    request: Request,
     bg: BackgroundTasks,
-    db = Depends(get_database),
-    user = Depends(get_current_user),
+    db=Depends(get_database),
+    user=Depends(get_current_user),
 ):
-    """
-    Sends a one-time verification link to the authenticated user's email.
-    - Idempotent: always 204 (even if already verified).
-    - Enforces a 60-second cooldown to prevent spam.
-    - Invalidates any previous unused tokens before issuing a new one.
-    """
     if user.get("email_verified") is True:
         return
 
@@ -43,7 +42,6 @@ async def request_email_verification(
     user_id = str(user["_id"])
     now = datetime.utcnow()
 
-    # Cooldown: silently ignore if a token was issued in the last 60 seconds
     recent = await db["email_verifications"].find_one({
         "user_id": user_id,
         "used_at": None,
@@ -52,7 +50,6 @@ async def request_email_verification(
     if recent:
         return
 
-    # Invalidate all previous unused tokens for this user
     await db["email_verifications"].update_many(
         {"user_id": user_id, "used_at": None},
         {"$set": {"used_at": now}},
@@ -75,13 +72,12 @@ async def request_email_verification(
 
 
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
 async def verify_email(
+    request: Request,
     body: EmailVerificationToken,
-    db = Depends(get_database),
+    db=Depends(get_database),
 ):
-    """
-    Accept a token and mark user.email_verified = True if valid and unexpired.
-    """
     token_hash = sha256(body.token.encode()).hexdigest()
     rec = await db["email_verifications"].find_one({"token_hash": token_hash})
 
@@ -101,21 +97,58 @@ async def verify_email(
     await db["email_verifications"].update_one({"_id": rec["_id"]}, {"$set": {"used_at": now}})
     return
 
+
+# -------------------------
+# Email change confirmation
+# -------------------------
+
+@router.post("/confirm-email-change", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def confirm_email_change(
+    request: Request,
+    body: ConfirmEmailChangeRequest,
+    db=Depends(get_database),
+):
+    """
+    Verifies the one-time token sent to the new email address, then
+    applies the email change and bumps token_version to invalidate all sessions.
+    """
+    token_hash = sha256(body.token.encode()).hexdigest()
+    rec = await db["email_changes"].find_one({"token_hash": token_hash})
+
+    now = datetime.utcnow()
+    if not rec or rec.get("used_at") or rec.get("expires_at") < now:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user_id = rec["user_id"]
+    new_email = rec["new_email"]
+
+    # Final check: new email not grabbed by someone else in the meantime
+    conflict = await db["users"].find_one({"email": new_email, "_id": {"$ne": ObjectId(user_id)}})
+    if conflict:
+        raise HTTPException(status_code=409, detail="Email already in use")
+
+    await db["users"].update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"email": new_email, "email_verified": True, "updated_at": now},
+         "$inc": {"token_version": 1}},
+    )
+    await db["email_changes"].update_one({"_id": rec["_id"]}, {"$set": {"used_at": now}})
+    return
+
+
 # -------------------------
 # Password reset (logged-out)
 # -------------------------
 
 @router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("3/minute")
 async def forgot_password(
+    request: Request,
     body: ForgotPasswordRequest,
     bg: BackgroundTasks,
-    db = Depends(get_database),
+    db=Depends(get_database),
 ):
-    """
-    Always returns 204 to avoid account enumeration.
-    If the email exists, creates a one-time, expiring reset token and emails it.
-    Enforces a 60-second cooldown and invalidates previous unused tokens.
-    """
     user = await db["users"].find_one({"email": body.email}, {"_id": 1, "email": 1})
     if not user:
         return
@@ -123,7 +156,6 @@ async def forgot_password(
     user_id = str(user["_id"])
     now = datetime.utcnow()
 
-    # Cooldown: silently ignore if a token was issued in the last 60 seconds
     recent = await db["password_resets"].find_one({
         "user_id": user_id,
         "used_at": None,
@@ -132,7 +164,6 @@ async def forgot_password(
     if recent:
         return
 
-    # Invalidate all previous unused reset tokens for this user
     await db["password_resets"].update_many(
         {"user_id": user_id, "used_at": None},
         {"$set": {"used_at": now}},
@@ -154,15 +185,12 @@ async def forgot_password(
 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
 async def reset_password(
+    request: Request,
     body: ResetPasswordRequest,
-    db = Depends(get_database),
+    db=Depends(get_database),
 ):
-    """
-    Verifies one-time token, sets new password, and bumps token_version so all
-    existing tokens are invalidated immediately.
-    Password strength and confirmation are validated by the schema.
-    """
     token_hash = sha256(body.token.encode()).hexdigest()
     rec = await db["password_resets"].find_one({"token_hash": token_hash})
 
@@ -183,5 +211,4 @@ async def reset_password(
          "$inc": {"token_version": 1}}
     )
     await db["password_resets"].update_one({"_id": rec["_id"]}, {"$set": {"used_at": now}})
-
     return

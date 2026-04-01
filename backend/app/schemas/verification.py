@@ -18,6 +18,11 @@ class ForgotPasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     email: str  # kept as plain str to avoid leaking enumeration via validation errors
 
+class ConfirmEmailChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=16)
+
+
 class ResetPasswordRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: str = Field(min_length=16)

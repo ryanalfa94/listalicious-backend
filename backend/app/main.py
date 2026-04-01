@@ -18,6 +18,7 @@ from app.routes import item as item_routes
 from app.routes import share as share_routes
 from app.routes import account as account_routes
 from app.routes import verification as verification_routes
+from app.routes import users as users_routes
 from app.database.database import init_indexes, get_database
 
 log = logging.getLogger("app")
@@ -132,3 +133,4 @@ app.include_router(item_routes.router,         prefix=V1)
 app.include_router(share_routes.router,        prefix=V1)
 app.include_router(account_routes.router,      prefix=V1)
 app.include_router(verification_routes.router, prefix=V1)
+app.include_router(users_routes.router,        prefix=V1)

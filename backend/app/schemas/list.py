@@ -21,5 +21,6 @@ class GroceryListResponse(BaseModel):
     owner_id: str
     items: List[dict] = []
     shared_with: List[str] = []
+    archived: bool = False
     created_at: datetime
     updated_at: datetime

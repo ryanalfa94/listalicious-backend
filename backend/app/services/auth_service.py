@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from bson import ObjectId
 from passlib.context import CryptContext
 from app.database.database import get_user_by_email
-from app.services.jwt_service import create_access_token, verify_token
+from app.services.jwt_service import create_access_token, create_refresh_token, verify_token
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
@@ -51,12 +51,9 @@ async def register_user(user_data) -> dict:
     res = await user_collection.insert_one(user_doc)
     user_id = str(res.inserted_id)
 
-    # 4) create access token (sub=user_id, tv=0)
-    token = create_access_token(
-        subject=user_id,
-        token_version=0,
-        extra={"email": user_data.email}
-    )
+    # 4) create tokens
+    token = create_access_token(subject=user_id, token_version=0, extra={"email": user_data.email})
+    refresh = create_refresh_token(subject=user_id, token_version=0)
 
     # 5) build response
     user_out = {
@@ -67,7 +64,7 @@ async def register_user(user_data) -> dict:
         "updated_at": now,
         "email_verified": False,
     }
-    return {"user": user_out, "access_token": token, "token_type": "bearer"}
+    return {"user": user_out, "access_token": token, "refresh_token": refresh, "token_type": "bearer"}
 
 # ---------- Login (same response shape) ----------
 async def login_user(email: str, password: str) -> Optional[dict]:
@@ -103,11 +100,9 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         {"$set": {"failed_login_count": 0, "locked_until": None}},
     )
 
-    token = create_access_token(
-        subject=str(user["_id"]),
-        token_version=int(user.get("token_version", 0)),
-        extra={"email": user["email"]}
-    )
+    tv = int(user.get("token_version", 0))
+    token = create_access_token(subject=str(user["_id"]), token_version=tv, extra={"email": user["email"]})
+    refresh = create_refresh_token(subject=str(user["_id"]), token_version=tv)
 
     user_out = {
         "_id": str(user["_id"]),
@@ -117,7 +112,7 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         "updated_at": user.get("updated_at"),
         "email_verified": user.get("email_verified", False),
     }
-    return {"user": user_out, "access_token": token, "token_type": "bearer"}
+    return {"user": user_out, "access_token": token, "refresh_token": refresh, "token_type": "bearer"}
 
 # ---------- Current user with token_version enforcement ----------
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):

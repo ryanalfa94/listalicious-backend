@@ -13,6 +13,11 @@ class ItemCreate(BaseModel):
     is_checked: Optional[bool] = False
 
 
+class ItemBulkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[ItemCreate] = Field(min_length=1, max_length=50)
+
+
 class ItemUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -20,6 +25,12 @@ class ItemUpdate(BaseModel):
     unit: Optional[str] = Field(None, max_length=50)
     note: Optional[str] = Field(None, max_length=1000)
     is_checked: Optional[bool] = None
+
+
+class ItemReorderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # Ordered list of item IDs — each item's position becomes its index in this list
+    order: list[str] = Field(min_length=1, max_length=500)
 
 
 class ItemResponse(BaseModel):
@@ -31,5 +42,6 @@ class ItemResponse(BaseModel):
     note: Optional[str] = None
     is_checked: bool
     list_id: str
+    position: Optional[int] = None
     created_at: datetime
     updated_at: datetime
