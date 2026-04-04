@@ -1,59 +1,78 @@
 # schemas/user.py
 
-# Purpose of schemas:
-# They’re not used to store data in MongoDB
-# They’re used to validate input and shape output for FastAPI
- 
-
-# This file defines Pydantic schemas for user-related operations like registration, login, and responses.
-
-
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
+import re
 
 
 # Input schema for user registration
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
-    username: Optional[str] = None  # optional display name
+    # max_length=128: bcrypt only reads the first 72 bytes — passing a huge
+    # string wastes CPU before that check even runs.
+    password: str = Field(min_length=8, max_length=128)
+    username: Optional[str] = Field(None, max_length=50)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit.")
+        return v
 
 
-# Input schema for login requests    
+# Input schema for login requests
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
 
+# Input schema for profile updates (PATCH /me)
+class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: Optional[str] = Field(None, max_length=50)
+
+
+# Input schema for changing password while authenticated (POST /auth/change-password)
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+    confirm_new_password: Optional[str] = None
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit.")
+        return v
+
+    @model_validator(mode="after")
+    def confirm_match(self) -> "ChangePasswordRequest":
+        if self.confirm_new_password is not None and self.new_password != self.confirm_new_password:
+            raise ValueError("Passwords do not match.")
+        return self
+
+
+# Input schema for changing email address while authenticated (POST /auth/change-email)
+class ChangeEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    new_email: EmailStr
+    password: str  # current password required to confirm identity
+
+
 # Output schema for sending user data back (e.g., after login or register)
 class UserResponse(BaseModel):
-    # MongoDB stores the user ID as "_id", but we alias it to "id"
-    # so that our API response looks clean and frontend-friendly
-    id: str = Field(...,alias="_id")
-    
-    # User's email address (validated as a proper email format)
-    email: EmailStr
-    
-    # Optional display name or nickname
-    username: Optional[str] = None
-    
-    # Timestamp for when the user was created in the database
-    created_at: datetime
-    
-    # Timestamp for the last update to the user document
-    updated_at: datetime
-    
-    # Extra config to handle Mongo + datetime formatting
-    class config:
-        # Allows FastAPI to accept both "id" and "_id" when populating this model
-        # Useful when loading documents from MongoDB (which returns "_id")
-        allow_population_by_field_name = True
-        
-        # Ensures datetime fields are returned as ISO 8601 strings (e.g. "2024-05-20T18:30:00Z")
-        # instead of raw Python datetime objects that break JSON serialization
-        json_encoder = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict(populate_by_name=True)
 
-    
+    id: str = Field(..., alias="_id")
+    email: EmailStr
+    username: Optional[str] = None
+    email_verified: bool = False
+    created_at: datetime
+    updated_at: datetime

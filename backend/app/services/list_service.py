@@ -14,18 +14,29 @@ async def create_grocery_list(title: str, owner_id: str) -> dict:
         "owner_id": owner_id,
         "items": [],
         "shared_with": [],
+        "archived": False,
         "created_at": now,
         "updated_at": now
     }
 
     result = await db["grocery_lists"].insert_one(doc)
-    doc["_id"] = str(result.inserted_id)  # convert ObjectId to string
+    doc["_id"] = str(result.inserted_id)
 
     return doc
 
-async def get_my_lists(db, user_id: str):
-    cursor = db["grocery_lists"].find({"owner_id": str(user_id)}).sort("created_at", -1)
-    docs = await cursor.to_list(length=200)
+async def get_my_lists(db, user_id: str, skip: int = 0, limit: int = 50, include_archived: bool = False):
+    """Return all lists the user owns OR has been shared with, newest first."""
+    query: dict = {"$or": [{"owner_id": user_id}, {"shared_with": user_id}]}
+    if not include_archived:
+        query["archived"] = {"$ne": True}
+    cursor = (
+        db["grocery_lists"]
+        .find(query)
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    docs = await cursor.to_list(length=limit)
     for d in docs:
         d["_id"] = str(d["_id"])
     return docs
@@ -44,3 +55,6 @@ async def update_list(db, list_id: str, payload: dict):
 
 async def delete_list(db, list_id: str):
     await db["grocery_lists"].delete_one({"_id": ObjectId(list_id)})
+    await db["items"].delete_many({"list_id": list_id})
+    await db["activity_logs"].delete_many({"list_id": list_id})
+    await db["list_invites"].delete_many({"list_id": list_id})
