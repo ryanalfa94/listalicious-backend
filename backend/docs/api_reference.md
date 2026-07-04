@@ -1,3 +1,10 @@
+## Quick start
+
+- OpenAPI docs: `http://127.0.0.1:8000/v1/docs`
+- Health: `http://127.0.0.1:8000/health`
+- Readiness: `http://127.0.0.1:8000/ready`
+- Metrics: `http://127.0.0.1:8000/metrics`
+
 ## 🔐 Auth APIs
 
 ### POST /auth/register

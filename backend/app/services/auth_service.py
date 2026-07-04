@@ -26,6 +26,15 @@ bearer_scheme = HTTPBearer()
 # not the email exists (prevents user-enumeration via timing).
 _DUMMY_HASH = pwd_context.hash("__dummy__")
 
+
+def _normalize_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 # ---------- Register (auto-login) ----------
 async def register_user(user_data) -> dict:
     # 1) unique email
@@ -35,7 +44,7 @@ async def register_user(user_data) -> dict:
 
     # 2) hash password
     hashed_password = pwd_context.hash(user_data.password)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # 3) insert with token_version
     user_doc = {
@@ -75,10 +84,10 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         pwd_context.verify(password, _DUMMY_HASH)
         return None
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check lockout
-    locked_until = user.get("locked_until")
+    locked_until = _normalize_datetime(user.get("locked_until"))
     if locked_until and locked_until > now:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

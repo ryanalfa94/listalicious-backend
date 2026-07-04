@@ -1,7 +1,8 @@
 # routes/list.py
 from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi.responses import JSONResponse
 from bson import ObjectId
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 from hashlib import sha256
 from app.database.database import get_database
@@ -12,6 +13,27 @@ from app.services.activity import log_activity
 from app.schemas.list import GroceryListCreate, GroceryListResponse, GroceryListUpdate
 
 router = APIRouter(prefix="/lists", tags=["Lists"])
+
+
+def _normalize_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, ObjectId):
+        return str(value)
+    return value
+
 
 INVITE_TTL_DAYS = 7
 
@@ -24,8 +46,9 @@ async def join_list_via_invite(token: str, db=Depends(get_database), user=Depend
     token_hash = sha256(token.encode()).hexdigest()
     rec = await db["list_invites"].find_one({"token_hash": token_hash})
 
-    now = datetime.utcnow()
-    if not rec or rec.get("used_at") or rec.get("expires_at") < now:
+    now = datetime.now(timezone.utc)
+    expires_at = _normalize_datetime(rec.get("expires_at")) if rec else None
+    if not rec or rec.get("used_at") or expires_at is None or expires_at < now:
         raise HTTPException(status_code=400, detail="Invalid or expired invite link")
 
     list_id = rec["list_id"]
@@ -60,8 +83,24 @@ async def get_lists(
     db=Depends(get_database),
     user=Depends(get_current_user),
 ):
-    return await list_service.get_my_lists(db, str(user["_id"]), skip=skip, limit=limit,
-                                           include_archived=include_archived)
+    docs = await list_service.get_my_lists(
+        db,
+        str(user["_id"]),
+        skip=skip,
+        limit=limit,
+        include_archived=include_archived,
+    )
+    total_count = await db["grocery_lists"].count_documents({
+        "$or": [{"owner_id": str(user["_id"])}, {"shared_with": str(user["_id"])}],
+        **({"archived": {"$ne": True}} if not include_archived else {}),
+    })
+    headers = {
+        "X-Total-Count": str(total_count),
+        "X-Has-More": str(skip + len(docs) < total_count).lower(),
+        "X-Limit": str(limit),
+        "X-Skip": str(skip),
+    }
+    return JSONResponse(content=[_jsonable(doc) for doc in docs], headers=headers)
 
 
 @router.get("/{list_id}", response_model=GroceryListResponse)
@@ -118,7 +157,7 @@ async def create_invite_link(list_id: str, db=Depends(get_database), user=Depend
     await ensure_list_owned(db, list_id, str(user["_id"]))
     raw = secrets.token_urlsafe(32)
     token_hash = sha256(raw.encode()).hexdigest()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=INVITE_TTL_DAYS)
 
     await db["list_invites"].insert_one({
@@ -139,7 +178,7 @@ async def archive_list(list_id: str, db=Depends(get_database), user=Depends(get_
     await ensure_list_owned(db, list_id, str(user["_id"]))
     await db["grocery_lists"].update_one(
         {"_id": ObjectId(list_id)},
-        {"$set": {"archived": True, "updated_at": datetime.utcnow()}},
+        {"$set": {"archived": True, "updated_at": datetime.now(timezone.utc)}},
     )
     return
 
@@ -150,7 +189,7 @@ async def unarchive_list(list_id: str, db=Depends(get_database), user=Depends(ge
     await ensure_list_owned(db, list_id, str(user["_id"]))
     await db["grocery_lists"].update_one(
         {"_id": ObjectId(list_id)},
-        {"$set": {"archived": False, "updated_at": datetime.utcnow()}},
+        {"$set": {"archived": False, "updated_at": datetime.now(timezone.utc)}},
     )
     return
 
@@ -171,7 +210,7 @@ async def duplicate_list(list_id: str, db=Depends(get_database), user=Depends(re
     cursor = db["items"].find({"list_id": list_id, "is_checked": False}).sort("position", 1)
     items = await cursor.to_list(length=None)
     if items:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         new_docs = [
             {
                 "name": it["name"],

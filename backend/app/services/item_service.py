@@ -1,7 +1,7 @@
 # services/item_service.py
 
 # services/item_service.py
-from datetime import datetime
+from datetime import datetime, timezone
 from bson import ObjectId
 from app.database.database import get_database  # keep imports consistent
 
@@ -13,7 +13,7 @@ async def add_item_to_list(list_id: str, item_data: dict) -> dict:
     if not exists:
         return None
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     doc = {
         "name": item_data["name"],
         "quantity": item_data["quantity"],
@@ -35,7 +35,7 @@ async def get_items(db, list_id: str):
     return docs
 
 async def create_item(db, list_id: str, payload: dict):
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     doc = {
         "name": payload["name"],
         "quantity": payload["quantity"],
@@ -51,7 +51,7 @@ async def create_item(db, list_id: str, payload: dict):
     return doc
 
 async def update_item(db, list_id: str, item_id: str, payload: dict):
-    payload["updated_at"] = datetime.utcnow()
+    payload["updated_at"] = datetime.now(timezone.utc)
     await db["items"].update_one(
         {"_id": ObjectId(item_id), "list_id": list_id},
         {"$set": payload}
