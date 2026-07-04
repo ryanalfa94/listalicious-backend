@@ -2,7 +2,8 @@
 Tests for: register, login, /me, PATCH /me, account lockout.
 """
 import pytest
-from app.services.auth_service import MAX_FAILED_LOGINS
+from unittest.mock import patch
+from app.services.auth_service import MAX_FAILED_LOGINS, get_password_hash
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
@@ -163,3 +164,55 @@ async def test_lockout_resets_on_successful_login(client, registered_user, db):
     user = await db["users"].find_one({"email": registered_user["email"]})
     assert user["failed_login_count"] == 0
     assert user.get("locked_until") is None
+
+
+async def test_password_reset_flow(client, registered_user, db):
+    with patch("app.routes.verification.send_password_reset") as mock_send:
+        resp = await client.post("/v1/auth/forgot-password", json={"email": registered_user["email"]})
+        assert resp.status_code == 204
+        raw_token = mock_send.call_args[0][1]
+
+    resp = await client.post("/v1/auth/reset-password", json={
+        "token": raw_token,
+        "new_password": "NewPassword2",
+        "confirm_new_password": "NewPassword2",
+    })
+    assert resp.status_code == 204
+
+    resp = await client.post("/v1/auth/login", data={
+        "username": registered_user["email"],
+        "password": "NewPassword2",
+    })
+    assert resp.status_code == 200
+
+
+async def test_admin_can_toggle_user_status(client, db):
+    admin_resp = await client.post("/v1/auth/register", json={
+        "email": "admin@example.com",
+        "password": "Password1",
+    })
+    assert admin_resp.status_code == 201
+    admin_token = admin_resp.json()["access_token"]
+    await db["users"].update_one(
+        {"email": "admin@example.com"},
+        {"$set": {"role": "admin", "is_active": True}},
+    )
+
+    target_resp = await client.post("/v1/auth/register", json={
+        "email": "target@example.com",
+        "password": "Password1",
+    })
+    assert target_resp.status_code == 201
+    target_id = target_resp.json()["user"]["_id"]
+
+    list_resp = await client.get("/v1/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()) >= 2
+
+    status_resp = await client.patch(
+        f"/v1/admin/users/{target_id}/status",
+        json={"is_active": False},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert status_resp.status_code == 200
+    assert status_resp.json()["is_active"] is False

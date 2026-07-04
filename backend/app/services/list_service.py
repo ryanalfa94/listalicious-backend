@@ -1,13 +1,13 @@
 from app.database.database import get_database
 from app.models.list import GroceryList
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 
 db = get_database()
 list_collection = db["grocery_lists"]
 
 async def create_grocery_list(title: str, owner_id: str) -> dict:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     doc = {
         "title": title,
@@ -49,7 +49,7 @@ async def get_list(db, list_id: str):
     return doc
 
 async def update_list(db, list_id: str, payload: dict):
-    payload["updated_at"] = datetime.utcnow()
+    payload["updated_at"] = datetime.now(timezone.utc)
     await db["grocery_lists"].update_one({"_id": ObjectId(list_id)}, {"$set": payload})
     return await get_list(db, list_id)
 

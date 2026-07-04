@@ -26,6 +26,15 @@ bearer_scheme = HTTPBearer()
 # not the email exists (prevents user-enumeration via timing).
 _DUMMY_HASH = pwd_context.hash("__dummy__")
 
+
+def _normalize_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 # ---------- Register (auto-login) ----------
 async def register_user(user_data) -> dict:
     # 1) unique email
@@ -35,7 +44,7 @@ async def register_user(user_data) -> dict:
 
     # 2) hash password
     hashed_password = pwd_context.hash(user_data.password)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # 3) insert with token_version
     user_doc = {
@@ -46,6 +55,10 @@ async def register_user(user_data) -> dict:
         "updated_at": now,
         "token_version": 0,
         "email_verified": False,
+        "role": "user",
+        "is_active": True,
+        "failed_login_count": 0,
+        "locked_until": None,
     }
 
     res = await user_collection.insert_one(user_doc)
@@ -63,8 +76,18 @@ async def register_user(user_data) -> dict:
         "created_at": now,
         "updated_at": now,
         "email_verified": False,
+        "role": "user",
+        "is_active": True,
     }
-    return {"user": user_out, "access_token": token, "refresh_token": refresh, "token_type": "bearer"}
+    return {
+        "user": user_out,
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "message": "Welcome aboard! Your account is ready. Verify your email to unlock full access.",
+        "next_steps": ["Verify your email", "Create your first list"],
+        "requires_email_verification": True,
+    }
 
 # ---------- Login (same response shape) ----------
 async def login_user(email: str, password: str) -> Optional[dict]:
@@ -75,10 +98,16 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         pwd_context.verify(password, _DUMMY_HASH)
         return None
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+
+    if user.get("is_active", True) is False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is inactive. Contact an administrator.",
+        )
 
     # Check lockout
-    locked_until = user.get("locked_until")
+    locked_until = _normalize_datetime(user.get("locked_until"))
     if locked_until and locked_until > now:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -111,8 +140,21 @@ async def login_user(email: str, password: str) -> Optional[dict]:
         "created_at": user.get("created_at"),
         "updated_at": user.get("updated_at"),
         "email_verified": user.get("email_verified", False),
+        "role": user.get("role", "user"),
+        "is_active": user.get("is_active", True),
     }
-    return {"user": user_out, "access_token": token, "refresh_token": refresh, "token_type": "bearer"}
+    next_steps = ["Create your first list"]
+    if not user.get("email_verified", False):
+        next_steps.insert(0, "Verify your email")
+    return {
+        "user": user_out,
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "message": "Signed in successfully.",
+        "next_steps": next_steps,
+        "requires_email_verification": not user.get("email_verified", False),
+    }
 
 # ---------- Current user with token_version enforcement ----------
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
@@ -144,6 +186,9 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_
 
     if int(user.get("token_version", 0)) != token_tv:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token no longer valid")
+
+    if user.get("is_active", True) is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive. Contact an administrator.")
 
     return user
 

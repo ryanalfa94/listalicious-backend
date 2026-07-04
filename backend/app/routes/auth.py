@@ -33,7 +33,7 @@ async def _record_session(db, access_token: str, user_id: str) -> None:
         await db["sessions"].insert_one({
             "jti": payload["jti"],
             "user_id": user_id,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
             "expires_at": datetime.fromtimestamp(payload["exp"]),
         })
     except Exception:
@@ -104,6 +104,8 @@ async def read_current_user(current_user: dict = Depends(get_current_user)):
         "created_at": current_user.get("created_at"),
         "updated_at": current_user.get("updated_at"),
         "email_verified": current_user.get("email_verified", False),
+        "role": current_user.get("role", "user"),
+        "is_active": current_user.get("is_active", True),
     }
 
 
@@ -172,7 +174,7 @@ async def change_email(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already in use")
 
     user_id = str(user["_id"])
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Cooldown
     recent = await db["email_changes"].find_one({
@@ -208,7 +210,7 @@ async def change_email(
 @router.get("/sessions")
 async def list_sessions(db=Depends(get_database), user=Depends(get_current_user)):
     """Return all active (non-expired, non-revoked) sessions for the current user."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     sessions = await db["sessions"].find(
         {"user_id": str(user["_id"]), "expires_at": {"$gt": now}},
         {"_id": 0, "jti": 1, "created_at": 1, "expires_at": 1},

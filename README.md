@@ -1,25 +1,18 @@
 # 🛒 Listalicious Backend
 
-**Listalicious** is a smart, intuitive grocery list management app designed for seamless collaboration among busy households or groups. This is the backend component built using **FastAPI** and **MongoDB**, built to support mobile clients such as React Native.
+**Listalicious** is a collaborative grocery list backend built with **FastAPI** and **MongoDB**. It supports authenticated list and item management, sharing, invites, and secure session handling.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-- 📝 Create and manage grocery lists
-- 👨‍👩‍👧‍👦 Collaborate and share lists in real-time
-- 📦 MongoDB for flexible data storage
-- ⚡ FastAPI for blazing fast REST API performance
-- 🔒 Environment-safe with `.env` file support
-
----
-
-## 🛠️ Tech Stack
-
-- **Backend Framework:** FastAPI (Python)
-- **Database:** MongoDB Atlas (Free Tier)
-- **Deployment:** Ready for Render.com or Railway
-- **Auth (Optional):** Firebase Auth or custom token-based system
+- 📝 Create and manage grocery lists and items
+- 👥 Share lists with collaborators
+- 🔐 JWT authentication, email verification, and session revocation
+- 📦 MongoDB for flexible document storage
+- 🩺 `/health` and `/ready` endpoints for liveness and readiness checks
+- 🐳 Docker Compose support for local development
+- 📄 Swagger UI at `/docs`, ReDoc at `/redoc`, and the OpenAPI schema at `/openapi.json`
 
 ---
 
@@ -28,90 +21,158 @@
 ```
 listalicious-backend/
 ├── backend/
-│   ├── main.py               # Entry point for FastAPI app
-│   ├── schemas/              # Pydantic schemas for request & response validation (API input/output).
-│   ├── routes/               # API route files (e.g., groceries.py, users.py)
-│   ├── models/               # Pydantic models
-│   └── database.py           # MongoDB connection setup
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── core/
+│   │   ├── database/
+│   │   ├── models/
+│   │   ├── routes/
+│   │   ├── schemas/
+│   │   └── services/
+├── .venv/                    # Local Python virtual environment
 ├── requirements.txt          # Python dependencies
-├── .gitignore
-└── README.md
+├── Dockerfile
+├── docker-compose.yml
+├── run.sh
+├── README.md
 ```
 
 ---
 
-## ⚙️ Getting Started
+## ⚙️ Running the app locally
 
-### 1. Clone the repo
+### Option 1 — Python local development
+
+1. Create and activate the virtual environment:
 ```bash
-git clone https://github.com/ryanalfa94/listalicious-backend.git
-cd listalicious-backend
+python -m venv .venv
+source .venv/Scripts/activate
 ```
 
-### 2. Create a virtual environment
+2. Install dependencies:
 ```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
-
-### 3. Install dependencies
-```bash
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Create `.env` file
-```env
-MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/listalicious?retryWrites=true&w=majority
-DB_NAME=listalicious
-```
-
-### 5. Run the server
+3. Copy the example env file:
 ```bash
-uvicorn backend.main:app --reload
+cp .env.example .env
 ```
 
-Go to `http://127.0.0.1:8000/docs` to explore the Swagger API docs.
-
----
-## Docker and Mango
-
-🐳 Running MongoDB with Docker (Optional Local Setup)
-If you're working locally and prefer not to install MongoDB manually, you can spin it up with Docker:
-
-1. Make sure Docker is installed
-Install Docker Desktop and ensure it's running.
-
-2. Start a MongoDB container
-docker run -d \
-  --name listalicious-mongo \
-  -p 27017:27017 \
-  -v listalicious_data:/data/db \
-  mongo
-
-This command:
-Runs MongoDB in the background
-Makes it available on localhost:27017
-Persists data with a named volume (listalicious_data)
-
-3. Update your .env for local use
+4. Update `.env` with your values. At minimum:
+```env
 MONGO_URI=mongodb://localhost:27017/listalicious
-DB_NAME=listalicious
+MONGO_DB_NAME=listalicious
+JWT_SECRET=replace-me-with-a-long-random-secret
+ALLOWED_ORIGINS=http://localhost:3000
+APP_URL=http://localhost:3000
+EMAIL_FROM=no-reply@example.com
+```
 
-4. Verify the container is running
-docker ps
+5. Start the app:
+```bash
+./run.sh
+```
 
-if container is not running, you can run it manually by clicking on the start button inside the docker application. 
+6. Open the API docs:
 
-You should see a container named listalicious-mongo. You're ready to run the backend!
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 
 ---
-## Testing 
-Optionally use Swagger docs
-If you want to test things easily:
 
-Visit: http://localhost:8000/docs
+## 🐳 Running with Docker Compose
 
-or Postman
+This repo supports a Docker Compose workflow for local development.
+
+1. Make sure Docker Desktop is running.
+
+2. Build the app image once:
+```bash
+docker build -t listalicious-app .
+```
+
+3. Start the stack:
+```bash
+docker compose up --no-build -d
+```
+
+4. Verify the services:
+```bash
+docker compose ps
+```
+
+5. View the API docs:
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
+
+### Notes
+- The app service uses `MONGO_URI=mongodb://mongo:27017/listalicious` when running via Compose.
+- If `docker compose up --build` fails on Windows, the above manual build plus `docker compose up --no-build -d` is the recommended workaround.
+- To stop and remove containers and volumes:
+```bash
+docker compose down -v
+```
+
+---
+
+## 📄 Environment variables
+
+Use `.env.example` as the source of truth. The backend currently reads:
+- `MONGO_URI`
+- `MONGO_DB_NAME`
+- `JWT_SECRET`
+- `ALLOWED_ORIGINS`
+- `APP_URL`
+- `SENDGRID_API_KEY`
+- `EMAIL_FROM`
+- `ENV`
+
+> The app requires `JWT_SECRET` and `ALLOWED_ORIGINS` in production mode.
+
+---
+
+## 🧪 Testing
+
+Run the test suite:
+```bash
+pytest -q
+```
+
+---
+
+## 📦 API docs
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
+- Additional API reference: `backend/docs/api_reference.md`
+
+---
+
+## 📚 Developer docs
+
+- Developer onboarding: `DEVELOPMENT.md`
+- Contributor guide: `CONTRIBUTING.md`
+- Deployment guide: `DEPLOYMENT.md`
+- API examples: `API_EXAMPLES.md`
+- Architecture overview: `ARCHITECTURE.md`
+- API reference: `backend/docs/api_reference.md`
+
+---
+
+## ✅ Current status
+
+- Docker Compose development is supported
+- Local Python development is supported
+- Health, readiness, and metrics endpoints are implemented
+- Password recovery and email verification flows are available
+- Admin moderation endpoints support user activation and deactivation
+- The app is ready for local or containerized testing
 
 ---
 

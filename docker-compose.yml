@@ -1,0 +1,25 @@
+services:
+  app:
+    image: listalicious-app
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017/listalicious
+      MONGO_DB_NAME: listalicious
+      ENV: dev
+      LOG_LEVEL: INFO
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

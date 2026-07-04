@@ -16,3 +16,6 @@ class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    message: str
+    next_steps: list[str]
+    requires_email_verification: bool = True

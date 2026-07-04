@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 
 from app.database.database import get_database
@@ -91,7 +91,7 @@ async def change_password(
         {
             "$set": {
                 "hashed_password": new_hash,
-                "password_changed_at": datetime.utcnow(),
+                "password_changed_at": datetime.now(timezone.utc),
             },
             "$inc": {"token_version": 1},
         },

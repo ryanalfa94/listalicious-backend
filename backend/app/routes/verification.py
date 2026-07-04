@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, Request, status, HTTPException
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import secrets
 from bson import ObjectId
@@ -16,6 +16,15 @@ from app.schemas.verification import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def _normalize_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
 
 # token lifetimes
 VERIFY_TTL_MIN = 60 * 24   # 24h
@@ -40,7 +49,7 @@ async def request_email_verification(
 
     email = user["email"]
     user_id = str(user["_id"])
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     recent = await db["email_verifications"].find_one({
         "user_id": user_id,
@@ -81,8 +90,9 @@ async def verify_email(
     token_hash = sha256(body.token.encode()).hexdigest()
     rec = await db["email_verifications"].find_one({"token_hash": token_hash})
 
-    now = datetime.utcnow()
-    if not rec or rec.get("used_at") or rec.get("expires_at") < now:
+    now = datetime.now(timezone.utc)
+    expires_at = _normalize_datetime(rec.get("expires_at")) if rec else None
+    if not rec or rec.get("used_at") or expires_at is None or expires_at < now:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
     user_id = rec["user_id"]
@@ -116,8 +126,9 @@ async def confirm_email_change(
     token_hash = sha256(body.token.encode()).hexdigest()
     rec = await db["email_changes"].find_one({"token_hash": token_hash})
 
-    now = datetime.utcnow()
-    if not rec or rec.get("used_at") or rec.get("expires_at") < now:
+    now = datetime.now(timezone.utc)
+    expires_at = _normalize_datetime(rec.get("expires_at")) if rec else None
+    if not rec or rec.get("used_at") or expires_at is None or expires_at < now:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
     user_id = rec["user_id"]
@@ -154,7 +165,7 @@ async def forgot_password(
         return
 
     user_id = str(user["_id"])
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     recent = await db["password_resets"].find_one({
         "user_id": user_id,
@@ -194,8 +205,9 @@ async def reset_password(
     token_hash = sha256(body.token.encode()).hexdigest()
     rec = await db["password_resets"].find_one({"token_hash": token_hash})
 
-    now = datetime.utcnow()
-    if not rec or rec.get("used_at") or rec.get("expires_at") < now:
+    now = datetime.now(timezone.utc)
+    expires_at = _normalize_datetime(rec.get("expires_at")) if rec else None
+    if not rec or rec.get("used_at") or expires_at is None or expires_at < now:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
     user_id = rec["user_id"]

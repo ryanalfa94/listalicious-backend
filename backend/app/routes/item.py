@@ -1,5 +1,6 @@
 # routes/item.py
 from fastapi import APIRouter, HTTPException, Query, status, Depends
+from fastapi.responses import JSONResponse
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from app.database.database import get_database
@@ -9,9 +10,21 @@ from app.services.activity import log_activity
 from app.schemas.item import ItemCreate, ItemBulkCreate, ItemUpdate, ItemReorderRequest, ItemResponse
 from pymongo import UpdateOne
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/lists/{list_id}/items", tags=["Items"])
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, ObjectId):
+        return str(value)
+    return value
 
 
 @router.get("", response_model=list[ItemResponse])
@@ -37,13 +50,20 @@ async def list_items(
     docs = await cursor.to_list(length=limit)
     for d in docs:
         d["_id"] = str(d["_id"])
-    return [ItemResponse(**d) for d in docs]
+    total_count = await db["items"].count_documents(item_filter)
+    headers = {
+        "X-Total-Count": str(total_count),
+        "X-Has-More": str(skip + len(docs) < total_count).lower(),
+        "X-Limit": str(limit),
+        "X-Skip": str(skip),
+    }
+    return JSONResponse(content=[_jsonable(ItemResponse(**d).model_dump()) for d in docs], headers=headers)
 
 
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_item(list_id: str, item: ItemCreate, db=Depends(get_database), user=Depends(require_verified_email)):
     await ensure_list_access(db, list_id, str(user["_id"]))
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     position = await db["items"].count_documents({"list_id": list_id})
     doc = {
         "name": item.name,
@@ -72,7 +92,7 @@ async def bulk_create_items(
 ):
     """Add up to 50 items in a single request."""
     await ensure_list_access(db, list_id, str(user["_id"]))
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     base_position = await db["items"].count_documents({"list_id": list_id})
     docs = [
         {
@@ -112,7 +132,7 @@ async def reorder_items(
     ops = [
         UpdateOne(
             {"_id": ObjectId(item_id), "list_id": list_id},
-            {"$set": {"position": idx, "updated_at": datetime.utcnow()}},
+            {"$set": {"position": idx, "updated_at": datetime.now(timezone.utc)}},
         )
         for idx, item_id in enumerate(body.order)
     ]
@@ -127,7 +147,7 @@ async def toggle_item_check(list_id: str, item_id: str, db=Depends(get_database)
     doc = await db["items"].find_one({"_id": ObjectId(item_id), "list_id": list_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Item not found")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     new_checked = not doc.get("is_checked", False)
     await db["items"].update_one(
         {"_id": ObjectId(item_id)},
@@ -174,7 +194,7 @@ async def move_item(
     if not doc:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     new_position = await db["items"].count_documents({"list_id": body.target_list_id})
     await db["items"].update_one(
         {"_id": ObjectId(item_id)},
@@ -202,7 +222,7 @@ async def update_item(list_id: str, item_id: str, payload: ItemUpdate,
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
-    updates["updated_at"] = datetime.utcnow()
+    updates["updated_at"] = datetime.now(timezone.utc)
     await db["items"].update_one(
         {"_id": ObjectId(item_id), "list_id": list_id},
         {"$set": updates},

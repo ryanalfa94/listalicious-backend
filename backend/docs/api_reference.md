@@ -1,3 +1,12 @@
+## Quick start
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
+- Health: `http://127.0.0.1:8000/health`
+- Readiness: `http://127.0.0.1:8000/ready`
+- Metrics: `http://127.0.0.1:8000/metrics`
+
 ## 🔐 Auth APIs
 
 ### POST /auth/register

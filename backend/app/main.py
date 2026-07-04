@@ -1,15 +1,19 @@
 # backend/app/main.py
+import json
+import logging
 import os
 import sys
+import time
 import uuid
-import logging
+from collections import Counter
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Depends
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.limiter import limiter
 from app.routes import auth
@@ -19,9 +23,44 @@ from app.routes import share as share_routes
 from app.routes import account as account_routes
 from app.routes import verification as verification_routes
 from app.routes import users as users_routes
+from app.routes import admin as admin_routes
 from app.database.database import init_indexes, get_database
 
 log = logging.getLogger("app")
+REQUESTS_TOTAL = 0
+STATUS_CODES = Counter()
+ERRORS_TOTAL = 0
+START_TIME = time.time()
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload)
+
+
+def _configure_logging() -> None:
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_format = os.getenv("LOG_FORMAT", "plain").lower()
+    if log_format == "json":
+        formatter = JsonFormatter()
+    else:
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    root = logging.getLogger()
+    root.handlers = [handler]
+    root.setLevel(log_level)
+
+
+_configure_logging()
 
 # ── Env validation (fail fast in production) ──────────────────────────────────
 def _validate_env() -> None:
@@ -44,13 +83,20 @@ def _validate_env() -> None:
 _validate_env()
 
 # ── App ───────────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_indexes()
+    yield
+
+
 app = FastAPI(
     title="Listalicious API",
     version="1.0.0",
     description="Backend for the Listalicious grocery list app.",
-    docs_url="/v1/docs",
-    redoc_url="/v1/redoc",
-    openapi_url="/v1/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
@@ -85,29 +131,40 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# ── Request ID ────────────────────────────────────────────────────────────────
-class RequestIDMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        return response
-
-app.add_middleware(RequestIDMiddleware)
+# ── Request ID + request logging ────────────────────────────────────────────
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    request.state.request_id = request_id
+    started_at = time.perf_counter()
+    global REQUESTS_TOTAL, ERRORS_TOTAL
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    REQUESTS_TOTAL += 1
+    STATUS_CODES[str(response.status_code)] += 1
+    if response.status_code >= 500:
+        ERRORS_TOTAL += 1
+    response.headers["X-Request-ID"] = request_id
+    log.info(
+        "[%s] %s %s -> %s in %.2fms",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 # ── Global exception handler (never leak stack traces) ────────────────────────
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    global ERRORS_TOTAL
+    ERRORS_TOTAL += 1
     log.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
     )
-
-# ── Startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup_event():
-    await init_indexes()
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["Health"])
@@ -121,9 +178,33 @@ async def health_check(db=Depends(get_database)):
             content={"status": "error", "db": "unreachable"},
         )
 
+@app.get("/ready", tags=["Health"])
+async def readiness_check():
+    return {
+        "status": "ready",
+        "service": "listalicious-backend",
+        "version": app.version,
+    }
+
+
+@app.get("/metrics", tags=["Health"])
+async def metrics():
+    return {
+        "service": "listalicious-backend",
+        "version": app.version,
+        "requests_total": REQUESTS_TOTAL,
+        "errors_total": ERRORS_TOTAL,
+        "status_codes": dict(STATUS_CODES),
+        "uptime_seconds": round(time.time() - START_TIME, 2),
+    }
+
+
 @app.get("/", tags=["Health"])
 async def read_root():
-    return {"message": "Listalicious backend is alive!"}
+    return {
+        "message": "Listalicious backend is alive!",
+        "version": app.version,
+    }
 
 # ── Routers (all under /v1) ───────────────────────────────────────────────────
 V1 = "/v1"
@@ -134,3 +215,4 @@ app.include_router(share_routes.router,        prefix=V1)
 app.include_router(account_routes.router,      prefix=V1)
 app.include_router(verification_routes.router, prefix=V1)
 app.include_router(users_routes.router,        prefix=V1)
+app.include_router(admin_routes.router,        prefix=V1)

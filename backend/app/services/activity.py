@@ -1,5 +1,5 @@
 # services/activity.py
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 async def log_activity(db, *, list_id: str, user_id: str, user_email: str, action: str, meta: dict | None = None):
@@ -14,7 +14,7 @@ async def log_activity(db, *, list_id: str, user_id: str, user_email: str, actio
             "user_email": user_email,
             "action": action,
             "meta": meta or {},
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
         })
     except Exception:
         pass
