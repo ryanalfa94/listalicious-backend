@@ -23,6 +23,7 @@ from app.routes import share as share_routes
 from app.routes import account as account_routes
 from app.routes import verification as verification_routes
 from app.routes import users as users_routes
+from app.routes import admin as admin_routes
 from app.database.database import init_indexes, get_database
 
 log = logging.getLogger("app")
@@ -92,9 +93,9 @@ app = FastAPI(
     title="Listalicious API",
     version="1.0.0",
     description="Backend for the Listalicious grocery list app.",
-    docs_url="/v1/docs",
-    redoc_url="/v1/redoc",
-    openapi_url="/v1/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     lifespan=lifespan,
 )
 
@@ -214,3 +215,4 @@ app.include_router(share_routes.router,        prefix=V1)
 app.include_router(account_routes.router,      prefix=V1)
 app.include_router(verification_routes.router, prefix=V1)
 app.include_router(users_routes.router,        prefix=V1)
+app.include_router(admin_routes.router,        prefix=V1)

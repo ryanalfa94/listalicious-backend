@@ -57,9 +57,11 @@ ENV=dev
 
 Open:
 
-- `http://127.0.0.1:8000/v1/docs`
-- `http://127.0.0.1:8000/health`
-- `http://127.0.0.1:8000/ready`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
+- Health: `http://127.0.0.1:8000/health`
+- Readiness: `http://127.0.0.1:8000/ready`
 
 ---
 
@@ -118,8 +120,16 @@ pytest -q tests/test_auth.py
 
 ## API documentation
 
-- OpenAPI docs: `http://127.0.0.1:8000/v1/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 - Static API reference: `backend/docs/api_reference.md`
+
+## Account and moderation notes
+
+- Password recovery is available via `POST /v1/auth/forgot-password` and `POST /v1/auth/reset-password`.
+- Admin moderation is available via `GET /v1/admin/users` and `PATCH /v1/admin/users/{user_id}/status`.
+- Registration and login responses now include onboarding guidance and whether email verification is still required.
 
 ---
 

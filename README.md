@@ -12,7 +12,7 @@
 - 📦 MongoDB for flexible document storage
 - 🩺 `/health` and `/ready` endpoints for liveness and readiness checks
 - 🐳 Docker Compose support for local development
-- 📄 OpenAPI docs at `/v1/docs`
+- 📄 Swagger UI at `/docs`, ReDoc at `/redoc`, and the OpenAPI schema at `/openapi.json`
 
 ---
 
@@ -77,7 +77,9 @@ EMAIL_FROM=no-reply@example.com
 
 6. Open the API docs:
 
-`http://127.0.0.1:8000/v1/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 
 ---
 
@@ -104,7 +106,9 @@ docker compose ps
 
 5. View the API docs:
 
-`http://127.0.0.1:8000/v1/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 
 ### Notes
 - The app service uses `MONGO_URI=mongodb://mongo:27017/listalicious` when running via Compose.
@@ -143,7 +147,9 @@ pytest -q
 
 ## 📦 API docs
 
-- OpenAPI docs: `http://127.0.0.1:8000/v1/docs`
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI schema: `http://127.0.0.1:8000/openapi.json`
 - Additional API reference: `backend/docs/api_reference.md`
 
 ---
@@ -164,6 +170,8 @@ pytest -q
 - Docker Compose development is supported
 - Local Python development is supported
 - Health, readiness, and metrics endpoints are implemented
+- Password recovery and email verification flows are available
+- Admin moderation endpoints support user activation and deactivation
 - The app is ready for local or containerized testing
 
 ---

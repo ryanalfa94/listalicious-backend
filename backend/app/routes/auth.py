@@ -104,6 +104,8 @@ async def read_current_user(current_user: dict = Depends(get_current_user)):
         "created_at": current_user.get("created_at"),
         "updated_at": current_user.get("updated_at"),
         "email_verified": current_user.get("email_verified", False),
+        "role": current_user.get("role", "user"),
+        "is_active": current_user.get("is_active", True),
     }
 
 
