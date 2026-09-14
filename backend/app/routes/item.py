@@ -57,7 +57,7 @@ async def list_items(
         "X-Limit": str(limit),
         "X-Skip": str(skip),
     }
-    return JSONResponse(content=[_jsonable(ItemResponse(**d).model_dump()) for d in docs], headers=headers)
+    return JSONResponse(content=[_jsonable(ItemResponse(**d).model_dump(by_alias=True)) for d in docs], headers=headers)
 
 
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)

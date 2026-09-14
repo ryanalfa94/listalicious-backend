@@ -24,17 +24,25 @@ EMAIL_CHANGE_TTL_MIN = 60 * 24
 EMAIL_CHANGE_COOLDOWN_SEC = 60
 
 
-async def _record_session(db, access_token: str, user_id: str) -> None:
-    """Store a session record so users can list and revoke individual sessions."""
+async def _record_session(db, access_token: str, refresh_token: str, user_id: str) -> None:
+    """Store a session record so users can list and revoke individual sessions.
+
+    Stores the paired refresh token's jti/expiry too, so revoking a session can
+    blacklist both tokens — otherwise a revoked device can silently refresh itself
+    a new access token since /refresh never checks the access token's session.
+    """
     payload = verify_token(access_token)
-    if not payload:
+    refresh_payload = verify_refresh_token(refresh_token)
+    if not payload or not refresh_payload:
         return
     try:
         await db["sessions"].insert_one({
             "jti": payload["jti"],
+            "refresh_jti": refresh_payload["jti"],
+            "refresh_expires_at": datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc),
             "user_id": user_id,
             "created_at": datetime.now(timezone.utc),
-            "expires_at": datetime.fromtimestamp(payload["exp"]),
+            "expires_at": datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
         })
     except Exception:
         pass  # duplicate jti on retry — safe to ignore
@@ -44,7 +52,7 @@ async def _record_session(db, access_token: str, user_id: str) -> None:
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserCreate, db=Depends(get_database)):
     result = await register_user(user)
-    await _record_session(db, result["access_token"], result["user"]["_id"])
+    await _record_session(db, result["access_token"], result["refresh_token"], result["user"]["_id"])
     return result
 
 
@@ -54,7 +62,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     result = await login_user(form_data.username, form_data.password)
     if not result:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    await _record_session(db, result["access_token"], result["user"]["_id"])
+    await _record_session(db, result["access_token"], result["refresh_token"], result["user"]["_id"])
     return result
 
 
@@ -75,6 +83,9 @@ async def refresh_tokens(request: Request, body: RefreshRequest, db=Depends(get_
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
+    if await db["revoked_tokens"].find_one({"jti": payload.get("jti")}):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token no longer valid")
+
     user_id = payload.get("sub")
     token_tv = int(payload.get("tv", 0))
 
@@ -91,7 +102,7 @@ async def refresh_tokens(request: Request, body: RefreshRequest, db=Depends(get_
     tv = int(user.get("token_version", 0))
     new_access = create_access_token(subject=user_id, token_version=tv, extra={"email": user["email"]})
     new_refresh = create_refresh_token(subject=user_id, token_version=tv)
-    await _record_session(db, new_access, user_id)
+    await _record_session(db, new_access, new_refresh, user_id)
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
 
 
@@ -222,6 +233,19 @@ async def list_sessions(db=Depends(get_database), user=Depends(get_current_user)
     return [s for s in sessions if s["jti"] not in revoked]
 
 
+async def _blacklist(db, jti: str, user_id: str, expires_at: datetime) -> None:
+    await db["revoked_tokens"].update_one(
+        {"jti": jti},
+        {"$set": {
+            "jti": jti,
+            "user_id": user_id,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+
+
 @router.delete("/sessions/{jti}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_session(jti: str, db=Depends(get_database), user=Depends(get_current_user)):
     """Revoke a specific session by JTI. Use this to remotely log out a single device."""
@@ -229,16 +253,15 @@ async def revoke_session(jti: str, db=Depends(get_database), user=Depends(get_cu
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await db["revoked_tokens"].update_one(
-        {"jti": jti},
-        {"$set": {
-            "jti": jti,
-            "user_id": str(user["_id"]),
-            "expires_at": session["expires_at"],
-            "created_at": datetime.now(timezone.utc),
-        }},
-        upsert=True,
-    )
+    user_id = str(user["_id"])
+    await _blacklist(db, jti, user_id, session["expires_at"])
+
+    # Also blacklist the paired refresh token — otherwise a "revoked" device can
+    # silently mint itself a fresh access token on its next silent refresh.
+    refresh_jti = session.get("refresh_jti")
+    refresh_expires_at = session.get("refresh_expires_at")
+    if refresh_jti and refresh_expires_at:
+        await _blacklist(db, refresh_jti, user_id, refresh_expires_at)
     return
 
 
@@ -257,16 +280,16 @@ async def logout_current_device(
     if not jti or not exp_ts:
         return
 
-    await db["revoked_tokens"].update_one(
-        {"jti": jti},
-        {"$set": {
-            "jti": jti,
-            "user_id": str(user["_id"]),
-            "expires_at": datetime.fromtimestamp(exp_ts, tz=timezone.utc),
-            "created_at": datetime.now(timezone.utc),
-        }},
-        upsert=True,
-    )
+    user_id = str(user["_id"])
+    await _blacklist(db, jti, user_id, datetime.fromtimestamp(exp_ts, tz=timezone.utc))
+
+    # Also blacklist the paired refresh token so a silent refresh can't undo this logout.
+    session = await db["sessions"].find_one({"jti": jti, "user_id": user_id})
+    if session:
+        refresh_jti = session.get("refresh_jti")
+        refresh_expires_at = session.get("refresh_expires_at")
+        if refresh_jti and refresh_expires_at:
+            await _blacklist(db, refresh_jti, user_id, refresh_expires_at)
     return
 
 
