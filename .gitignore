@@ -7,3 +7,5 @@ __pycache__/
 .Python
 db.sqlite3
 .DS_Store
+env.bak-preclaude
+.env.bak-preclaude
