@@ -2,54 +2,61 @@
 
 Bugs, gaps, and gotchas found while building the frontend against this backend, logged here as they're found so they can be tackled later without digging back through chat history. Newest entries at the top of each section. Cross-reference: the frontend's own `REDESIGN_PROGRESS.md` tracks the UI side of this work.
 
+(Note: this file has been rewritten from scratch a couple of times after landing on a branch that didn't have my earlier local-only commits to it — those commits never got pushed, so they didn't survive your merges. Rewriting the full content each time now instead of relying on git history for it.)
+
 ## Bugs
 
-### `POST /auth/change-password` is registered twice, and one copy is dead code
+### `APP_URL` is still `http://localhost:3000` — every real email link is currently dead for a real user
 
-`backend/app/routes/auth.py` and `backend/app/routes/account.py` **both** declare `router = APIRouter(prefix="/auth", ...)` and **both** define `POST /change-password` — so both end up mounted at the exact same path, `POST /v1/auth/change-password`.
+**Found 2026-09-14, right after real email delivery (Brevo) went live — worth fixing before sending any more real emails to real people.**
 
-`main.py` includes them in this order:
+`backend/app/services/mailer.py`: `APP_URL = os.getenv("APP_URL", "http://localhost:3000")`, and your `.env` has it explicitly set to that same value (not just the fallback). Every verification/reset/email-change link built from it —
 
 ```python
-app.include_router(auth.router,           prefix=V1)   # line 211 — wins
-...
-app.include_router(account_routes.router,  prefix=V1)   # line 215 — shadowed, dead
+link = f"{APP_URL.rstrip('/')}/verify-email?token={token}"
 ```
 
-FastAPI/Starlette resolves routes in registration order, so `auth.py`'s handler always wins and `account.py`'s is unreachable. This matters because `account.py`'s version is the more complete one — it has an optional `confirm_new_password` field and clearer validation (`_validate_new_password_rules`), while `auth.py`'s is the simpler one that actually runs.
+— currently reads `http://localhost:3000/verify-email?token=...`. For anyone opening that email on a machine that isn't yours, `localhost:3000` resolves to *their own* computer — nothing is listening there, so the link is simply dead. Two separate problems bundled into one value:
 
-**Fix options:**
-- Delete/rename one of the two handlers so there's only one `/auth/change-password`, or
-- Give `account.py`'s router a distinct prefix/path if it's meant to be a separate v2-style endpoint, or
-- If `auth.py`'s version is intentionally the canonical one, delete `account.py`'s dead handler to avoid confusion.
+1. **It needs to point at wherever the frontend actually is.** For local dev-machine-to-dev-machine testing that's `http://localhost:8090` (the frontend's actual Expo web port — note **not** 3000, so even same-machine local testing is currently broken too). For anything sent to a real inbox, it needs to be the real deployed frontend origin, or a mobile deep link scheme (e.g. `listalicious://verify-email?token=...`) if that's how the shipped app expects to be opened from an email.
+2. **This is now live** — real emails are going out with this broken link today. Not an emergency (the frontend's screens all have a "paste the link or token" fallback that still works regardless of whether the link itself resolves), but every real recipient hits a dead page unless they know to copy the token out manually.
 
-Found: 2026-09-14, while auditing all routes to find backend features the frontend wasn't using yet. Not fixed — this is a backend-repo decision, left for you to make.
+**Not fixed by me** — env var + a per-environment decision on the real frontend origin / deep link scheme, your call.
+
+### Fixed: `POST /auth/change-password` was registered twice, one copy dead code
+
+Was: `backend/app/routes/auth.py` and `backend/app/routes/account.py` both declared `POST /auth/change-password` at the identical path, and `account.py`'s (more complete) version was silently shadowed and unreachable since `auth.py`'s router was included first in `main.py`. Fixed in commit `ebc2303`: the duplicate was deleted, its one extra check ported into the surviving handler.
+
+### Fixed: `GET /auth/sessions` always returned `[]` on a non-UTC server
+
+Was: `_record_session` stored `expires_at` via a naive `datetime.fromtimestamp()` (no `tz=timezone.utc`), so on this dev machine (UTC-6/7 depending on DST) every session's stored expiry landed hours in the past, and the `>now()` filter in `GET /auth/sessions` excluded everything. Fixed in your `hotfixes` branch — verified directly against the `sessions` collection and via the frontend's session-list UI, which now populates correctly.
+
+### Fixed: revoking a session could be silently undone by the frontend's own token refresh
+
+Was: `DELETE /auth/sessions/{jti}` only blacklisted that access token's JTI; the paired refresh token wasn't tracked or checked by `/auth/refresh` at all, so a revoked device could quietly mint itself a new access token on its next silent refresh. Fixed in the same `hotfixes` branch — sessions now also record the paired refresh token's JTI/expiry, both get blacklisted on revoke, `/auth/refresh` checks `revoked_tokens` too, and the same fix was extended to single-device logout. Verified end-to-end: corrupted a second device's access token to force a refresh attempt after its session was revoked, and the refresh itself now correctly fails.
+
+### Fixed: `DELETE /account/delete-account` required no password
+
+Was: any valid access token could hard-delete the account and cascade its data with zero re-authentication, unlike change-password/change-email which both require the current password. Fixed in `hotfixes` — now requires `{password}` in the body, verified against the current password hash. The frontend's typed "DELETE" confirmation was always just a UI-only guard against a stray tap, not a security boundary on its own — this closes the actual gap. (Frontend was updated the same day to send the password now that the contract changed.)
 
 ## Known gaps (endpoints that exist but nothing in the frontend calls yet)
 
-Not bugs — just backend surface area with no UI built against it yet. Frontend team is working through these one at a time, each on its own branch (see `REDESIGN_PROGRESS.md` in the frontend repo for current status):
+All four backend gaps from `feature/backend-gaps` are now wired up on the frontend (`share-owner-identity`, `join-invite-preview`, `global-activity-feed`, `item-aisle-field` branches — see `REDESIGN_PROGRESS.md` for details): `GET /users/{id}`, `GET /lists/join/{token}` preview, `GET /lists/activity`, and the `aisle` field on items.
 
-- `PUT /lists/{id}`, `DELETE /lists/{id}` — rename/delete a list (in progress as of 2026-09-14)
-- `DELETE /lists/{id}/leave` — a collaborator leaving a shared list
-- `POST /verify/forgot-password`, `POST /verify/reset-password` — no password-recovery UI exists at all yet
-- `POST /items/bulk` — no "add several items at once" UI
-- `PATCH /lists/{id}/archive`, `/unarchive`, `POST /lists/{id}/duplicate`
-- `GET /users/search` — Share screen only accepts an exact email match today
-- `PATCH /items/reorder`, `PATCH /items/{id}/move`
-- `PATCH /auth/me` — no username-editing UI
-- `GET /auth/sessions`, `DELETE /auth/sessions/{jti}` — only "log out everywhere" (`logout-all`) is wired up, no per-device list/revoke
-- `POST /account/change-password` (dead code per the bug above) / `auth.py`'s live version — no change-password UI on either
-- `DELETE /account/delete-account` — no account-deletion UI
-- `GET /admin/users`, `PATCH /admin/users/{id}/status` — full admin user-management API, no UI planned against it (likely out of scope for the phone app)
+Still open:
+
+- `PATCH /auth/me` (username) — done, frontend wired up (`username-edit` branch).
+- `GET /auth/sessions` / `DELETE /auth/sessions/{jti}` — done (`sessions-list` branch), now that the timezone + revocation bugs above are fixed.
+- `GET /admin/users`, `PATCH /admin/users/{id}/status` — full admin user-management API, no UI planned against it (likely out of scope for the phone app).
+
+Genuinely nothing else known to be unused at this point — every non-admin endpoint has a frontend flow against it.
 
 ## Design gaps (things the frontend had to scope down or fake because the backend has no data for them)
 
-Carried over from `REDESIGN_PROGRESS.md`'s "Known blockers" section — repeated here since this file is meant to be the backend-side todo list:
-
-- **No realtime/presence.** No websocket/polling presence signal exists, so "shopping right now" / "last active" UI, and any live-collaborator indicator, is either omitted or relabeled to something honest.
-- **No `aisle` field on items.** Items can't be grouped by aisle; the Add/edit item UI has no aisle picker.
-- **Activity is per-list only** (`GET /lists/{id}/activity`), no global/cross-list feed endpoint. The frontend fetches per-list and merges client-side, which is fine for a handful of lists but won't scale to dozens.
-- **No invite-preview endpoint.** A `GET` for invite-token metadata (who invited you, which list) before accepting would let the Join screen show a real "Maya invited you to Groceries" headline instead of just an invite code.
-- **No way to resolve a list owner's identity for non-owners.** `GET /lists/{id}` returns `owner_id` but there's no "get user by id" endpoint, so a non-owner's Share screen view can't show who owns the list.
+- **No realtime/presence.** Still the only real "known blocker" left. No websocket/polling presence signal exists, so "shopping right now" / "last active" UI, and any live-collaborator indicator, is either omitted or relabeled to something honest. This is the biggest remaining product gap — the app's own tagline is "watch it empty in real time," so this is arguably closer to core value than anything else on this list.
 - **`Item`'s `id` field serializes inconsistently.** `GET /lists/{id}/items` manually calls `.model_dump()` (no alias) and returns `id`; `POST`/`PUT`/`PATCH .../check` return the Pydantic model directly, which serializes via `response_model_by_alias` (default `true`) and returns `_id` — same resource, two different shapes depending on which route touched it. The frontend works around this with a `normalizeItem()` helper in `listApi.ts`, but the real fix belongs here (make all `Item`-returning routes serialize the same way).
-- **Dev-mode email isn't real delivery.** With no `SENDGRID_API_KEY` set, verification/change-email/reset-password links get logged to the backend console instead of emailed. Fine for testing, not shippable — needs a real `SENDGRID_API_KEY` + from-address decision before going live.
+- **Dev-mode email fallback.** No longer the blocker it was — real delivery via Brevo is live (see the `APP_URL` bug above for the one loose end). Sender is currently a personal Gmail address verified in Brevo; before shipping, move to a domain-verified sender (e.g. `no-reply@listalicious.app`) for deliverability (avoids spam-folder issues) — your own note, repeating it here so it's tracked in one place.
+
+## Heads-up: Brevo free tier is 300 emails/day
+
+Real email sends now happen on every registration, forgot-password, and email-change request — including from automated testing. Worth keeping in mind before running a large batch of signup/reset tests in a single day; you'll get rate-limited by Brevo's cap, not by the backend itself.
