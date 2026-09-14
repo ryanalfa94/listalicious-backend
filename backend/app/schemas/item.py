@@ -10,6 +10,7 @@ class ItemCreate(BaseModel):
     quantity: int = Field(ge=1, le=9999)
     unit: Optional[str] = Field(None, max_length=50)
     note: Optional[str] = Field(None, max_length=1000)
+    aisle: Optional[str] = Field(None, max_length=100)
     is_checked: Optional[bool] = False
 
 
@@ -24,6 +25,7 @@ class ItemUpdate(BaseModel):
     quantity: Optional[int] = Field(None, ge=1, le=9999)
     unit: Optional[str] = Field(None, max_length=50)
     note: Optional[str] = Field(None, max_length=1000)
+    aisle: Optional[str] = Field(None, max_length=100)
     is_checked: Optional[bool] = None
 
 
@@ -40,6 +42,7 @@ class ItemResponse(BaseModel):
     quantity: int
     unit: Optional[str] = None
     note: Optional[str] = None
+    aisle: Optional[str] = None
     is_checked: bool
     list_id: str
     position: Optional[int] = None
