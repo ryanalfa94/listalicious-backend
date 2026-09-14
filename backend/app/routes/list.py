@@ -40,6 +40,35 @@ INVITE_TTL_DAYS = 7
 
 # ── IMPORTANT: literal-path routes must come BEFORE /{list_id} routes ──────────
 
+@router.get("/join/{token}")
+async def preview_invite(token: str, db=Depends(get_database), user=Depends(get_current_user)):
+    """
+    Preview an invite's metadata (list title, who invited you) before accepting,
+    so the Join screen can show "X invited you to Y" instead of just a bare code.
+    """
+    token_hash = sha256(token.encode()).hexdigest()
+    rec = await db["list_invites"].find_one({"token_hash": token_hash})
+
+    now = datetime.now(timezone.utc)
+    expires_at = _normalize_datetime(rec.get("expires_at")) if rec else None
+    if not rec or rec.get("used_at") or expires_at is None or expires_at < now:
+        raise HTTPException(status_code=400, detail="Invalid or expired invite link")
+
+    list_doc = await db["grocery_lists"].find_one({"_id": ObjectId(rec["list_id"])}, {"title": 1})
+    inviter = None
+    try:
+        inviter = await db["users"].find_one({"_id": ObjectId(rec["created_by"])}, {"email": 1, "username": 1})
+    except Exception:
+        pass
+
+    return {
+        "list_title": list_doc["title"] if list_doc else None,
+        "invited_by_email": inviter["email"] if inviter else None,
+        "invited_by_username": inviter.get("username") if inviter else None,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
 @router.post("/join/{token}", status_code=status.HTTP_204_NO_CONTENT)
 async def join_list_via_invite(token: str, db=Depends(get_database), user=Depends(get_current_user)):
     """Accept an invite link. Adds the authenticated user as a collaborator."""
@@ -63,6 +92,36 @@ async def join_list_via_invite(token: str, db=Depends(get_database), user=Depend
     await log_activity(db, list_id=list_id, user_id=user_id, user_email=user["email"],
                        action="joined_via_invite")
     return
+
+
+@router.get("/activity")
+async def get_global_activity(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db=Depends(get_database),
+    user=Depends(get_current_user),
+):
+    """
+    Return recent activity across every list the user owns or collaborates on,
+    newest first. Unlike GET /lists/{id}/activity, this doesn't require merging
+    per-list results client-side.
+    """
+    user_id = str(user["_id"])
+    list_ids_cursor = db["grocery_lists"].find(
+        {"$or": [{"owner_id": user_id}, {"shared_with": user_id}]}, {"_id": 1}
+    )
+    list_ids = [str(doc["_id"]) async for doc in list_ids_cursor]
+    if not list_ids:
+        return []
+
+    cursor = (
+        db["activity_logs"]
+        .find({"list_id": {"$in": list_ids}}, {"_id": 0})
+        .sort("created_at", -1)
+        .skip(skip)
+        .limit(limit)
+    )
+    return await cursor.to_list(length=limit)
 
 
 # ── Standard CRUD ──────────────────────────────────────────────────────────────
@@ -217,6 +276,7 @@ async def duplicate_list(list_id: str, db=Depends(get_database), user=Depends(re
                 "quantity": it["quantity"],
                 "unit": it.get("unit"),
                 "note": it.get("note"),
+                "aisle": it.get("aisle"),
                 "is_checked": False,
                 "list_id": new_list["_id"],
                 "position": idx,
